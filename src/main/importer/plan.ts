@@ -10,8 +10,10 @@ export interface PlanDeps {
 }
 
 const NexusConfig = z.object({
-  accounts: z.array(z.object({ id: z.string().min(1), name: z.string(), order: z.number().optional() })),
+  accounts: z.array(z.object({ id: z.string(), name: z.string(), order: z.number().optional() })),
 })
+
+const SAFE_ID = /^[A-Za-z0-9_-]{1,64}$/
 
 const unavailable = (reason: string): ImportPlan => ({
   available: false,
@@ -35,14 +37,17 @@ export function planImport(
   }
 
   const dirs = new Set(deps.listDir(paths.nexusPartitions))
-  const accounts = [...parsed.accounts].sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const sorted = [...parsed.accounts]
+    .filter((a) => SAFE_ID.test(a.id))
+    .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
+  const accounts = sorted.filter((a, i) => sorted.findIndex((b) => b.id === a.id) === i)
   const items: ImportItem[] = accounts
     .filter((a) => dirs.has(`wa-${a.id}`))
     .map((a, i) => {
       const sourceDir = join(paths.nexusPartitions, `wa-${a.id}`)
       return {
         sourceId: a.id,
-        name: a.name.trim().slice(0, 40) || `Account ${i + 1}`,
+        name: a.name.trim().slice(0, 40).trim() || `Account ${i + 1}`,
         color: colorForIndex(i),
         sourceDir,
         bytes: deps.dirSize(sourceDir),

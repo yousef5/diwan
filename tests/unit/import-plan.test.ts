@@ -79,4 +79,65 @@ describe('planImport', () => {
       items: [],
     })
   })
+
+  test('unsafe ids are skipped, not rejected', () => {
+    const plan = planImport(
+      paths,
+      deps(
+        cfg([
+          { id: '../x', name: 'Evil' },
+          { id: 'aaa', name: 'A' },
+        ]),
+        ['wa-aaa', 'wa-../x'],
+      ),
+    )
+    expect(plan.items.map((i) => i.sourceId)).toEqual(['aaa'])
+    expect(plan.items.every((i) => i.sourceDir.startsWith(`${paths.nexusPartitions}/wa-`))).toBe(true)
+  })
+
+  test('only an unsafe id -> no signed-in accounts', () => {
+    expect(planImport(paths, deps(cfg([{ id: '../x', name: 'Evil' }]), ['wa-../x']))).toMatchObject({
+      available: false,
+      reason: 'Nexus has no signed-in accounts',
+      items: [],
+    })
+  })
+
+  test('duplicate ids give one item, first kept', () => {
+    const plan = planImport(
+      paths,
+      deps(
+        cfg([
+          { id: 'aaa', name: 'First' },
+          { id: 'aaa', name: 'Second' },
+        ]),
+        ['wa-aaa'],
+      ),
+    )
+    expect(plan.items.map((i) => i.name)).toEqual(['First'])
+  })
+
+  test('missing order sorts as 0', () => {
+    const plan = planImport(
+      paths,
+      deps(
+        cfg([
+          { id: 'bbb', name: 'B', order: 1 },
+          { id: 'aaa', name: 'A' },
+        ]),
+        ['wa-aaa', 'wa-bbb'],
+      ),
+    )
+    expect(plan.items.map((i) => i.sourceId)).toEqual(['aaa', 'bbb'])
+  })
+
+  test('orphans are counted even with no live accounts', () => {
+    const plan = planImport(paths, deps(cfg([]), ['wa-old1', 'wa-old2']))
+    expect(plan).toMatchObject({ available: false, orphanDirs: 2 })
+  })
+
+  test('names are trimmed again after truncation', () => {
+    const plan = planImport(paths, deps(cfg([{ id: 'aaa', name: `${'x'.repeat(39)} yyy` }]), ['wa-aaa']))
+    expect(plan.items[0]?.name).toBe('x'.repeat(39))
+  })
 })
