@@ -11,6 +11,20 @@ import { matchShortcut, type ShortcutAction } from './shortcuts'
 import type { StateHub } from './state'
 import { watchHang } from './watchdog'
 
+// Crash times per account. Module-level on purpose: every remount is a NEW webContents, so a
+// counter inside wireGuest would restart at zero each time.
+const crashLog = new Map<string, number[]>()
+let clock: () => number = Date.now
+
+export function resetCrashes(accountId: string): void {
+  crashLog.delete(accountId)
+}
+
+// test-only
+export function setClock(fn: () => number): void {
+  clock = fn
+}
+
 export interface GuestDeps {
   hub: StateHub
   registry: Registry
@@ -101,7 +115,14 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     if (state !== 'offline' && state !== 'failed') d.hub.setRuntime(accountId, { state: 'loading' })
   })
   wc.on('did-stop-loading', () => {
-    if (d.hub.runtimeOf(accountId).state === 'loading') d.hub.setRuntime(accountId, { state: 'ready' })
+    if (d.hub.runtimeOf(accountId).state !== 'loading') return
+    // a page that is not WhatsApp (blank, error page) must show Retry, not an empty "ready"
+    if (!isWhatsAppOrigin(wc.getURL())) {
+      d.hub.setRuntime(accountId, { state: 'failed' })
+      return
+    }
+    // the title guard ignores bare titles while loading and Chromium won't re-fire the event: re-read it
+    d.hub.setRuntime(accountId, { state: 'ready', unread: parseUnread(wc.getTitle()) })
   })
   wc.on('did-fail-load', (_e, code, description, _url, isMainFrame) => {
     if (!isMainFrame) return
@@ -112,7 +133,6 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
   })
   wc.on('did-finish-load', () => wc.setZoomLevel(d.hub.account(accountId)?.zoom ?? 0))
 
-  const crashes: number[] = []
   wc.on('render-process-gone', (_e, details) => {
     if (details.reason === 'clean-exit') {
       // a clean exit while still mounted means the page died on its own
@@ -120,9 +140,10 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
       return
     }
     d.log.error('guest renderer gone', { accountId, reason: details.reason })
-    const now = Date.now()
+    const now = clock()
+    const crashes = (crashLog.get(accountId) ?? []).filter((t) => now - t <= 60_000)
     crashes.push(now)
-    while (crashes.length > 0 && now - crashes[0] > 60_000) crashes.shift()
+    crashLog.set(accountId, crashes)
     if (crashes.length >= 3) {
       d.log.error('guest crashed 3 times in 60 s, giving up', { accountId })
       d.hub.setRuntime(accountId, { state: 'failed' })
