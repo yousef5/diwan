@@ -1,6 +1,6 @@
 // Matches on `code` (physical key), not `key`, so shortcuts work with the Arabic layout active.
 export interface KeyInput {
-  type: 'keyDown' | 'keyUp'
+  type: string
   code: string
   key: string
   control: boolean
