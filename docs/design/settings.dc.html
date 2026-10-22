@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Diwan · Settings</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0f0f11}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+</style>
+</helmet>
+<div style="width: 100%; height: 800px; display: flex; background: #0f0f11; font-family: Inter, system-ui, sans-serif; color: #e4e4e7; overflow: hidden">
+
+  <nav aria-label="Settings sections" style="width: 236px; flex: 0 0 236px; background: #131316; border-right: 1px solid rgba(255,255,255,0.07); padding: 22px 12px; box-sizing: border-box; display: flex; flex-direction: column; gap: 2px">
+    <p style="margin: 0 10px 14px; font-size: 18px; font-weight: 600; color: #fafafa">Settings</p>
+    <sc-for list="{{sections}}" as="s" hint-placeholder-count="6">
+      <a href="#" style="{{s.style}}">{{s.name}}</a>
+    </sc-for>
+    <div style="flex: 1"></div>
+    <p style="margin: 0 10px; font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #71717a">Diwan 1.0.0</p>
+  </nav>
+
+  <main style="flex: 1; min-width: 0; overflow: auto; position: relative">
+    <button aria-label="Close settings" style="position: absolute; top: 18px; right: 20px; height: 32px; display: flex; align-items: center; gap: 8px; padding: 0 10px; border-radius: 8px; background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #a1a1aa; font: 500 12px Inter, sans-serif; cursor: pointer">
+      Close <span style="font-family: 'JetBrains Mono', monospace; font-size: 10px; color: #a1a1aa; background: #1f1f23; border: 1px solid #34343a; border-radius: 4px; padding: 0 5px">Esc</span>
+    </button>
+    <div style="max-width: 720px; padding: 30px 48px 48px; box-sizing: border-box; display: flex; flex-direction: column; gap: 28px">
+      <div>
+        <h1 style="margin: 0 0 6px; font-size: 22px; font-weight: 600; color: #fafafa">Notifications</h1>
+        <p style="margin: 0; font-size: 13px; color: #a1a1aa; line-height: 1.5">Diwan shows its own notifications, named after the account they come from. Clicking one opens that chat.</p>
+      </div>
+
+      <section aria-label="General notification options" style="background: #16161a; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; display: flex; flex-direction: column">
+        <sc-for list="{{toggles}}" as="t" hint-placeholder-count="4">
+          <label style="{{t.rowStyle}}">
+            <span style="flex: 1; display: flex; flex-direction: column; gap: 3px">
+              <span style="font-size: 14px; font-weight: 500; color: #fafafa">{{t.title}}</span>
+              <span style="font-size: 12px; color: #a1a1aa; line-height: 1.45">{{t.hint}}</span>
+            </span>
+            <span style="{{t.trackStyle}}"><span style="{{t.knobStyle}}"></span></span>
+            <input type="checkbox" checked="{{t.on}}" style="position: absolute; opacity: 0; width: 1px; height: 1px">
+          </label>
+        </sc-for>
+      </section>
+
+      <div style="display: flex; flex-direction: column; gap: 10px">
+        <h2 style="margin: 0; font-size: 13px; font-weight: 600; letter-spacing: 0.5px; text-transform: uppercase; color: #a1a1aa">Per account</h2>
+        <section aria-label="Per-account notifications" style="background: #16161a; border: 1px solid rgba(255,255,255,0.07); border-radius: 12px">
+          <sc-for list="{{accounts}}" as="a" hint-placeholder-count="4">
+            <div style="{{a.rowStyle}}">
+              <span style="{{a.avatarStyle}}">{{a.initials}}</span>
+              <span style="flex: 1; font-size: 14px; font-weight: 500; color: #fafafa">{{a.name}}</span>
+              <span style="font-size: 12px; color: #a1a1aa; margin-right: 12px">{{a.state}}</span>
+              <span style="{{a.trackStyle}}"><span style="{{a.knobStyle}}"></span></span>
+            </div>
+          </sc-for>
+        </section>
+      </div>
+    </div>
+  </main>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const sw = (on) => ({
+      trackStyle: 'position: relative; width: 38px; height: 22px; flex: 0 0 38px; border-radius: 11px; background: ' + (on ? '#3b82f6' : '#3f3f46') + ';',
+      knobStyle: 'position: absolute; top: 3px; left: ' + (on ? '19px' : '3px') + '; width: 16px; height: 16px; border-radius: 50%; background: #ffffff;'
+    });
+    const names = ['General', 'Notifications', 'Accounts', 'Data', 'Shortcuts', 'About'];
+    const sections = names.map((n) => ({
+      name: n,
+      style: 'display: block; padding: 9px 10px; border-radius: 8px; font-size: 13px; font-weight: 500; text-decoration: none; color: ' + (n === 'Notifications' ? '#fafafa' : '#a1a1aa') + '; background: ' + (n === 'Notifications' ? '#232328' : 'transparent') + ';'
+    }));
+    const list = [
+      { title: 'Show notifications', hint: 'Turn off to silence every account at once (also in the tray menu).', on: true },
+      { title: 'Play a sound', hint: 'Uses the system notification sound.', on: true },
+      { title: 'Show message text', hint: 'Off shows “New message” instead, for screen sharing and recording.', on: true },
+      { title: 'Mark the window as urgent', hint: 'Highlights Diwan’s workspace in the bar when a message arrives.', on: false }
+    ];
+    const toggles = list.map((t, i) => Object.assign({
+      title: t.title, hint: t.hint, on: t.on,
+      rowStyle: 'position: relative; display: flex; align-items: center; gap: 16px; padding: 16px 18px; cursor: pointer;' + (i ? ' border-top: 1px solid rgba(255,255,255,0.06);' : '')
+    }, sw(t.on)));
+    const accs = [
+      { initials: 'MY', name: 'Personal', color: '#3b82f6', on: true },
+      { initials: 'PH', name: 'Pharmacy', color: '#14b8a6', on: true },
+      { initials: 'FA', name: 'Family', color: '#f59e0b', on: false },
+      { initials: 'SA', name: 'SAP study', color: '#8b5cf6', on: true }
+    ];
+    const accounts = accs.map((a, i) => Object.assign({
+      initials: a.initials, name: a.name, state: a.on ? 'On' : 'Muted',
+      rowStyle: 'display: flex; align-items: center; gap: 12px; padding: 12px 18px;' + (i ? ' border-top: 1px solid rgba(255,255,255,0.06);' : ''),
+      avatarStyle: 'width: 28px; height: 28px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: #ffffff; background: ' + a.color + ';'
+    }, sw(a.on)));
+    return { sections, toggles, accounts };
+  }
+}
+</script>
+</body>
+</html>

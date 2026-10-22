@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Diwan · B · Rail + context bar</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&amp;family=JetBrains+Mono:wght@500;600&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0f0f11}
+a{color:#93c5fd}a:hover{color:#bfdbfe}
+</style>
+</helmet>
+<div style="width: 100%; height: 800px; display: flex; background: #0f0f11; font-family: Inter, system-ui, sans-serif; color: #e4e4e7; overflow: hidden">
+
+  <nav aria-label="Accounts" style="width: 68px; flex: 0 0 68px; background: #131316; border-right: 1px solid rgba(255,255,255,0.07); display: flex; flex-direction: column; align-items: center; padding: 14px 0 12px; box-sizing: border-box; gap: 10px">
+    <div style="width: 38px; height: 38px; border-radius: 11px; background: #1f1f23; border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center">
+      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e4e4e7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" role="img" aria-label="Diwan"><path d="M4 21V11a8 8 0 0 1 16 0v10"></path><path d="M4 21h16"></path><path d="M9 12.5h6a1.5 1.5 0 0 1 1.5 1.5v2a1.5 1.5 0 0 1-1.5 1.5h-3l-2.5 2v-2H9A1.5 1.5 0 0 1 7.5 16v-2A1.5 1.5 0 0 1 9 12.5z"></path></svg>
+    </div>
+    <div style="width: 28px; height: 1px; background: rgba(255,255,255,0.08); margin: 4px 0"></div>
+    <sc-for list="{{accounts}}" as="acc" hint-placeholder-count="4">
+      <div style="position: relative; width: 68px; display: flex; justify-content: center">
+        <sc-if value="{{acc.active}}" hint-placeholder-val="{{false}}">
+          <div style="position: absolute; left: 0; top: 10px; width: 3px; height: 24px; border-radius: 0 3px 3px 0; background: #3b82f6"></div>
+        </sc-if>
+        <button aria-label="{{acc.label}}" style="{{acc.tileStyle}}">
+          <span style="font-size: 14px; font-weight: 600; color: #ffffff">{{acc.initials}}</span>
+        </button>
+        <sc-if value="{{acc.hasUnread}}" hint-placeholder-val="{{false}}">
+          <span style="{{acc.pillStyle}}">{{acc.unread}}</span>
+        </sc-if>
+        <sc-if value="{{acc.offline}}" hint-placeholder-val="{{false}}">
+          <span style="position: absolute; left: 44px; top: 34px; width: 10px; height: 10px; border-radius: 50%; background: #f59e0b; border: 2px solid #131316"></span>
+        </sc-if>
+      </div>
+    </sc-for>
+    <button aria-label="Add account" style="width: 44px; height: 44px; border-radius: 12px; background: transparent; border: 1px dashed #3f3f46; display: flex; align-items: center; justify-content: center; cursor: pointer; margin-top: 2px">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+    </button>
+    <div style="flex: 1"></div>
+    <button aria-label="Settings" style="width: 40px; height: 40px; border-radius: 10px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+    </button>
+  </nav>
+
+  <div style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+    <header style="height: 48px; flex: 0 0 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 18px; background: #131316; border-bottom: 1px solid rgba(255,255,255,0.07); box-sizing: border-box">
+      <span style="width: 10px; height: 10px; border-radius: 50%; background: #14b8a6"></span>
+      <h1 style="margin: 0; font-size: 14px; font-weight: 600; color: #fafafa">Pharmacy</h1>
+      <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #a1a1aa"><span style="width: 6px; height: 6px; border-radius: 50%; background: #22c55e"></span>Connected</span>
+      <div style="flex: 1"></div>
+      <button style="height: 30px; display: flex; align-items: center; gap: 7px; padding: 0 10px; border-radius: 8px; background: #1f1f23; border: 1px solid rgba(255,255,255,0.08); color: #e4e4e7; font: 500 12px Inter, sans-serif; cursor: pointer">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#e4e4e7" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M22 12h-6l-2 3h-4l-2-3H2"></path><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"></path></svg>
+        Inbox
+        <span style="min-width: 18px; height: 18px; border-radius: 9px; background: #3b82f6; color: #fff; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; padding: 0 5px; box-sizing: border-box">15</span>
+      </button>
+      <span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #a1a1aa; padding: 0 6px">100%</span>
+      <button aria-label="Mute notifications for Pharmacy" style="width: 32px; height: 32px; border-radius: 8px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+      </button>
+      <button aria-label="Reload Pharmacy" style="width: 32px; height: 32px; border-radius: 8px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"></path><path d="M21 3v5h-5"></path><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"></path><path d="M8 16H3v5"></path></svg>
+      </button>
+      <button aria-label="More actions" style="width: 32px; height: 32px; border-radius: 8px; background: transparent; border: none; display: flex; align-items: center; justify-content: center; cursor: pointer">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M12 12h.01M19 12h.01M5 12h.01"></path></svg>
+      </button>
+    </header>
+
+    <main style="flex: 1; min-height: 0; display: flex">
+      <div style="width: 360px; flex: 0 0 360px; background: #141417; border-right: 1px solid rgba(255,255,255,0.06); padding: 18px 16px; box-sizing: border-box; display: flex; flex-direction: column; gap: 14px">
+        <div style="height: 34px; border-radius: 9px; background: #1f1f23"></div>
+        <sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+          <div style="display: flex; gap: 12px; align-items: center; padding: 6px 2px">
+            <div style="width: 44px; height: 44px; border-radius: 50%; background: #232327; flex: 0 0 44px"></div>
+            <div style="flex: 1; display: flex; flex-direction: column; gap: 8px">
+              <div style="{{r.top}}"></div>
+              <div style="{{r.bottom}}"></div>
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <div style="flex: 1; min-width: 0; background: #101013; display: flex; flex-direction: column; justify-content: flex-end; padding: 24px 32px; box-sizing: border-box; gap: 12px; position: relative">
+        <p style="position: absolute; top: 46%; left: 0; right: 0; margin: 0; text-align: center; font-size: 13px; color: #71717a">WhatsApp Web for “Pharmacy” runs here</p>
+        <div style="align-self: flex-start; width: 46%; height: 52px; border-radius: 12px; background: #1c1c20"></div>
+        <div style="align-self: flex-end; width: 34%; height: 40px; border-radius: 12px; background: #1d2a44"></div>
+        <div style="align-self: flex-start; width: 40%; height: 40px; border-radius: 12px; background: #1c1c20"></div>
+        <div style="height: 46px; border-radius: 12px; background: #1a1a1e; margin-top: 10px"></div>
+      </div>
+    </main>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1280,"height":800}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const accent = '#3b82f6';
+    const data = [
+      { initials: 'MY', name: 'Personal', color: '#3b82f6', unread: 0 },
+      { initials: 'PH', name: 'Pharmacy', color: '#14b8a6', unread: 12, active: true },
+      { initials: 'FA', name: 'Family', color: '#f59e0b', unread: 3, muted: true },
+      { initials: 'SA', name: 'SAP study', color: '#8b5cf6', unread: 0, offline: true }
+    ];
+    const accounts = data.map((a) => ({
+      initials: a.initials,
+      label: a.name + (a.unread ? ', ' + a.unread + ' unread' : ''),
+      active: !!a.active,
+      offline: !!a.offline,
+      hasUnread: a.unread > 0,
+      unread: a.unread,
+      tileStyle: 'width: 44px; height: 44px; border-radius: 12px; border: none; cursor: pointer; display: flex; align-items: center; justify-content: center; background: ' + a.color + '; opacity: ' + (a.active ? '1' : '0.82') + ';' + (a.active ? ' box-shadow: 0 0 0 2px #131316, 0 0 0 4px ' + accent + ';' : ''),
+      pillStyle: 'position: absolute; left: 38px; top: -4px; min-width: 18px; height: 18px; padding: 0 5px; box-sizing: border-box; border-radius: 9px; font-size: 11px; font-weight: 600; line-height: 18px; text-align: center; border: 2px solid #131316; color: #ffffff; background: ' + (a.muted ? '#52525b' : accent) + ';'
+    }));
+    const rows = [0.62, 0.48, 0.7, 0.55, 0.4, 0.66, 0.5, 0.58].map((w) => ({
+      top: 'height: 10px; border-radius: 5px; background: #2a2a2f; width: ' + Math.round(w * 100) + '%',
+      bottom: 'height: 8px; border-radius: 4px; background: #1f1f23; width: ' + Math.round((w + 0.2) * 100) + '%'
+    }));
+    return { accounts, rows };
+  }
+}
+</script>
+</body>
+</html>
