@@ -38,6 +38,9 @@ function match(i: KeyInput): ShortcutAction | null {
   const mod = process.platform === 'darwin' ? i.meta : i.control
   if (!mod) return null
 
+  // NumLock off turns Numpad4 into ArrowLeft etc: a numpad digit only counts if it types a digit
+  if (/^Numpad[0-9]$/.test(i.code) && !/^[0-9]$/.test(i.key)) return null
+
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(i.code)
   if (digit) return i.shift ? null : { type: 'account', index: Number(digit[1]) - 1 }
 

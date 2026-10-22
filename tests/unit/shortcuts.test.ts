@@ -16,7 +16,7 @@ describe('matchShortcut', () => {
   test('Ctrl+1…9 pick accounts by code (works on the Arabic layout)', () => {
     expect(matchShortcut(key('Digit1'))).toEqual({ type: 'account', index: 0 })
     expect(matchShortcut(key('Digit9'))).toEqual({ type: 'account', index: 8 })
-    expect(matchShortcut(key('Numpad3'))).toEqual({ type: 'account', index: 2 })
+    expect(matchShortcut(key('Numpad3', { key: '3' }))).toEqual({ type: 'account', index: 2 })
   })
   test('next / previous', () => {
     expect(matchShortcut(key('Tab'))).toEqual({ type: 'next' })
@@ -65,5 +65,10 @@ describe('matchShortcut', () => {
   })
   test('Meta alone is not the modifier on Linux', () => {
     expect(matchShortcut(key('Digit1', { control: false, meta: true }))).toBeNull()
+  })
+  test('numpad digits need a digit key (NumLock off sends arrows)', () => {
+    expect(matchShortcut(key('Numpad4', { key: 'ArrowLeft' }))).toBeNull()
+    expect(matchShortcut(key('Numpad0', { key: 'Insert' }))).toBeNull()
+    expect(matchShortcut(key('Numpad3', { key: '3' }))).toEqual({ type: 'account', index: 2 })
   })
 })

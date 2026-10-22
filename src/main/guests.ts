@@ -2,7 +2,7 @@ import type { WebContents } from 'electron'
 import type { ShellCommand } from '../shared/types'
 import { parseUnread } from '../shared/unread'
 import { popupContextMenu } from './context-menu-popup'
-import { chromeUserAgent, loadStateForError } from './guest-config'
+import { loadStateForError } from './guest-config'
 import { performLink } from './link-actions'
 import { classifyLink, WA_ORIGIN } from './link-policy'
 import type { Logger } from './log'
@@ -24,7 +24,7 @@ export interface GuestDeps {
 export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): void {
   d.registry.attach(wc, accountId)
   d.hub.setRuntime(accountId, { state: 'loading' }) // a fresh (or remounted) guest starts clean
-  wc.setUserAgent(chromeUserAgent())
+  // the user agent is set once on the session (sessions.ts), not per guest
 
   wc.setWindowOpenHandler(({ url }) => {
     performLink(classifyLink(url), wc, d.log)
@@ -40,11 +40,33 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
       return false
     }
   }
+  let blockedUrl: string | null = null
   wc.on('did-start-navigation', (details) => {
-    if (!details.isMainFrame || details.isSameDocument || isWhatsAppOrigin(details.url)) return
-    wc.stop()
-    d.log.warn('stopped a navigation away from WhatsApp', { accountId })
-    performLink(classifyLink(details.url), wc, d.log)
+    if (!details.isMainFrame || details.isSameDocument) return
+    if (isWhatsAppOrigin(details.url)) {
+      blockedUrl = null
+      return
+    }
+    // wc.stop() inside this event is a CHECK failure in Electron 44 (kills main): defer it
+    blockedUrl = details.url
+    setImmediate(() => {
+      if (wc.isDestroyed() || blockedUrl !== details.url) return // will-navigate handled it, or a newer nav replaced it
+      blockedUrl = null
+      wc.stop()
+      d.log.warn('stopped a navigation away from WhatsApp', { accountId })
+      performLink(classifyLink(details.url), wc, d.log)
+    })
+  })
+  wc.on('did-navigate', (_e, url) => {
+    if (!isWhatsAppOrigin(url)) {
+      // backstop for anything the guards missed (about:blank...)
+      d.log.warn('guest left WhatsApp, reloading it', { accountId })
+      void wc.loadURL(`${WA_ORIGIN}/`)
+      return
+    }
+    // a committed WhatsApp page clears a stale failure; did-stop-loading then marks it ready
+    const s = d.hub.runtimeOf(accountId).state
+    if (s === 'offline' || s === 'failed') d.hub.setRuntime(accountId, { state: 'loading' })
   })
   wc.on('will-redirect', (details) => {
     if (!details.isMainFrame || isWhatsAppOrigin(details.url)) return
@@ -55,6 +77,7 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     const action = classifyLink(url)
     if (action.kind === 'internal') return
     event.preventDefault()
+    if (url === blockedUrl) blockedUrl = null
     performLink(action, wc, d.log)
   })
 
@@ -67,7 +90,11 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     d.onShortcut(action)
   })
 
-  wc.on('page-title-updated', (_e, title) => d.hub.setRuntime(accountId, { unread: parseUnread(title) }))
+  wc.on('page-title-updated', (_e, title) => {
+    // while loading, a title without a "(N)" prefix is the bare page title: keep the old badge
+    if (d.hub.runtimeOf(accountId).state === 'loading' && !/^\s*\(/.test(title)) return
+    d.hub.setRuntime(accountId, { unread: parseUnread(title) })
+  })
 
   wc.on('did-start-loading', () => {
     const state = d.hub.runtimeOf(accountId).state
@@ -85,9 +112,22 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
   })
   wc.on('did-finish-load', () => wc.setZoomLevel(d.hub.account(accountId)?.zoom ?? 0))
 
+  const crashes: number[] = []
   wc.on('render-process-gone', (_e, details) => {
-    if (details.reason === 'clean-exit') return
+    if (details.reason === 'clean-exit') {
+      // a clean exit while still mounted means the page died on its own
+      if (!wc.isDestroyed()) d.hub.setRuntime(accountId, { state: 'failed' })
+      return
+    }
     d.log.error('guest renderer gone', { accountId, reason: details.reason })
+    const now = Date.now()
+    crashes.push(now)
+    while (crashes.length > 0 && now - crashes[0] > 60_000) crashes.shift()
+    if (crashes.length >= 3) {
+      d.log.error('guest crashed 3 times in 60 s, giving up', { accountId })
+      d.hub.setRuntime(accountId, { state: 'failed' })
+      return
+    }
     d.sendShell({ type: 'remount', id: accountId })
   })
   watchHang(wc, () => {
