@@ -58,6 +58,28 @@ describe('classifyLink', () => {
     ['blob:https://evil.example/1b2c', { kind: 'blocked', reason: 'foreign blob' }],
     ['file:///etc/passwd', { kind: 'blocked', reason: 'scheme file:' }],
     ['javascript:alert(1)', { kind: 'blocked', reason: 'scheme javascript:' }],
+    ['https://web.whatsapp.com@evil.com/', { kind: 'external', url: 'https://web.whatsapp.com@evil.com/' }],
+    ['https://web.whatsapp.com.evil.com/', { kind: 'external', url: 'https://web.whatsapp.com.evil.com/' }],
+    ['https://web.whatsapp.com./', { kind: 'external', url: 'https://web.whatsapp.com./' }],
+    ['http://web.whatsapp.com/', { kind: 'external', url: 'http://web.whatsapp.com/' }],
+    ['https://w\u0435b.whatsapp.com/', { kind: 'external', url: 'https://xn--wb-nlc.whatsapp.com/' }],
+    ['blob:http://web.whatsapp.com/x', { kind: 'blocked', reason: 'foreign blob' }],
+    ['data:text/html,x', { kind: 'blocked', reason: 'scheme data:' }],
+    ['HTTPS://WEB.WHATSAPP.COM/', { kind: 'internal' }],
+    ['https://web.whatsapp.com:8443/', { kind: 'external', url: 'https://web.whatsapp.com:8443/' }],
+    ['https://evil.com@web.whatsapp.com/', { kind: 'external', url: 'https://evil.com@web.whatsapp.com/' }],
+    ['https://user@wa.me/201001234567', { kind: 'external', url: 'https://user@wa.me/201001234567' }],
+    [
+      'https://api.whatsapp.com:444/send?phone=2010012',
+      { kind: 'external', url: 'https://api.whatsapp.com:444/send?phone=2010012' },
+    ],
+    [
+      'mailto:a@b.c?subject=hi&attach=/home/joe/.ssh/id_rsa',
+      { kind: 'external', url: 'mailto:a@b.c?subject=hi' },
+    ],
+    ['mailto:a@b.c\n', { kind: 'external', url: 'mailto:a@b.c' }],
+    [' tel:+20100', { kind: 'external', url: 'tel:+20100' }],
+    ['blob:https://web.whatsapp.com/1b2c\n', { kind: 'download', url: 'blob:https://web.whatsapp.com/1b2c' }],
     ['not a url', { kind: 'blocked', reason: 'invalid url' }],
   ]
   test.each(cases)('%s', (url, expected) => {
