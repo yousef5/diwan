@@ -1,17 +1,65 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import {
+  chmodSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  mkdtempSync,
+  readdirSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test, vi } from 'vitest'
-import { applyImport, dirSize, fsPlanDeps, nexusRunning } from '../../src/main/importer/apply'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { applyImport, dirSize, fsPlanDeps, nexusRunning, sweepPartials } from '../../src/main/importer/apply'
 import { planImport } from '../../src/main/importer/plan'
 import { createLogger } from '../../src/main/log'
 import { StateHub } from '../../src/main/state'
 import { Store } from '../../src/main/store/store'
 
 const ID_A = '649d14d5-ebb9-4ed6-9725-633b89c6ceac'
+const ID_B = 'b2c1d4e5-0000-4000-8000-000000000002'
+
+const temps: string[] = []
+const tmp = (prefix: string) => {
+  const d = mkdtempSync(join(tmpdir(), prefix))
+  temps.push(d)
+  return d
+}
+afterEach(() => {
+  for (const d of temps.splice(0)) {
+    try {
+      chmodSync(d, 0o700)
+    } catch {}
+    rmSync(d, { recursive: true, force: true })
+  }
+})
+
+const quiet = (dir: string) => createLogger(dir, { echo: false })
+const mkHub = () => {
+  const diwanDir = tmp('diwan-')
+  return { diwanDir, hub: new StateHub(new Store(diwanDir, 0)), parts: join(diwanDir, 'Partitions') }
+}
+const item = (sourceId: string, sourceDir: string, name = sourceId) => ({
+  sourceId,
+  name,
+  color: '#3b82f6',
+  sourceDir,
+  bytes: 0,
+})
+const plan = (...items: ReturnType<typeof item>[]) => ({
+  available: true,
+  reason: null,
+  orphanDirs: 0,
+  nexusRunning: false,
+  items,
+})
 
 function fakeNexus() {
-  const root = mkdtempSync(join(tmpdir(), 'nexus-'))
+  const root = tmp('nexus-')
   const parts = join(root, 'MultiWhatsApp', 'Partitions')
   mkdirSync(join(parts, `wa-${ID_A}`, 'IndexedDB'), { recursive: true })
   writeFileSync(join(parts, `wa-${ID_A}`, 'IndexedDB', 'db.ldb'), 'session-bytes')
@@ -24,7 +72,7 @@ function fakeNexus() {
 describe('import apply', () => {
   test('copies the session, registers the account, leaves Nexus untouched', async () => {
     const n = fakeNexus()
-    const diwanDir = mkdtempSync(join(tmpdir(), 'diwan-'))
+    const diwanDir = tmp('diwan-')
     const hub = new StateHub(new Store(diwanDir, 0))
     const setupSession = vi.fn()
     const plan = planImport({ nexusConfig: n.cfg, nexusPartitions: n.parts }, fsPlanDeps)
@@ -49,36 +97,219 @@ describe('import apply', () => {
     expect(hub.store.get().importedFromNexus).toBe(true)
   })
 
-  test('a failed copy is reported and cleaned up', async () => {
-    const diwanDir = mkdtempSync(join(tmpdir(), 'diwan-'))
-    const hub = new StateHub(new Store(diwanDir, 0))
-    const result = await applyImport(
-      {
-        available: true,
-        reason: null,
-        orphanDirs: 0,
-        nexusRunning: false,
-        items: [{ sourceId: 'x', name: 'Ghost', color: '#3b82f6', sourceDir: '/nonexistent/dir', bytes: 0 }],
-      },
-      {
-        hub,
-        partitionsDir: join(diwanDir, 'Partitions'),
-        setupSession: () => {},
-        log: createLogger(diwanDir, { echo: false }),
-      },
-    )
-    expect(result.imported).toEqual([])
-    expect(result.failed[0].name).toBe('Ghost')
-    expect(hub.accounts()).toEqual([])
-    expect(hub.store.get().importedFromNexus).toBe(false)
-  })
-
   test('nexusRunning reads the Chromium singleton lock', () => {
     const n = fakeNexus()
     expect(nexusRunning(n.userData)).toBe(false)
     symlinkSync('joe-cachyos-4242', join(n.userData, 'SingletonLock'))
-    expect(nexusRunning(n.userData, (pid) => pid === 4242)).toBe(true)
+    expect(
+      nexusRunning(
+        n.userData,
+        (pid) => pid === 4242,
+        () => 'electron',
+      ),
+    ).toBe(true)
     expect(nexusRunning(n.userData, () => false)).toBe(false)
+  })
+
+  test('symlinked wa-<id> is not offered; a symlinked sourceDir fails and creates nothing', async () => {
+    const n = fakeNexus()
+    const real = join(n.root, 'elsewhere')
+    mkdirSync(real)
+    writeFileSync(join(real, 'x'), '1')
+    symlinkSync(real, join(n.parts, `wa-${ID_B}`))
+    writeFileSync(
+      n.cfg,
+      JSON.stringify({
+        accounts: [
+          { id: ID_A, name: 'A', order: 0 },
+          { id: ID_B, name: 'B', order: 1 },
+        ],
+      }),
+    )
+    const p = planImport({ nexusConfig: n.cfg, nexusPartitions: n.parts }, fsPlanDeps)
+    expect(p.items.map((i) => i.sourceId)).toEqual([ID_A])
+
+    const { hub, parts, diwanDir } = mkHub()
+    const r = await applyImport(plan(item(ID_B, join(n.parts, `wa-${ID_B}`), 'B')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+    })
+    expect(r.failed[0].error).toMatch(/not a plain folder/)
+    expect(existsSync(parts) ? readdirSync(parts) : []).toEqual([])
+    expect(hub.accounts()).toEqual([])
+  })
+
+  test('symlinks and FIFOs inside the source are skipped; the source is untouched', async () => {
+    const n = fakeNexus()
+    const src = join(n.parts, `wa-${ID_A}`)
+    const outside = join(n.root, 'outside')
+    mkdirSync(outside)
+    writeFileSync(join(outside, 'secret'), 's')
+    symlinkSync(outside, join(src, 'abs-link'))
+    symlinkSync('../../outside', join(src, 'rel-link'))
+    let fifo = true
+    try {
+      execFileSync('mkfifo', [join(src, 'pipe')])
+    } catch {
+      fifo = false
+    }
+    const { hub, parts, diwanDir } = mkHub()
+    const r = await applyImport(plan(item(ID_A, src, 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+    })
+    expect(r.imported).toEqual(['A'])
+    const dest = join(parts, `acc-${hub.accounts()[0].id}`)
+    expect(readdirSync(dest)).toEqual(['IndexedDB'])
+    expect(lstatSync(join(src, 'abs-link')).isSymbolicLink()).toBe(true)
+    expect(lstatSync(join(src, 'rel-link')).isSymbolicLink()).toBe(true)
+    if (fifo) expect(lstatSync(join(src, 'pipe')).isFIFO()).toBe(true)
+    expect(readFileSync(join(outside, 'secret'), 'utf8')).toBe('s')
+  })
+
+  test('sweepPartials removes leftovers and keeps real partitions', async () => {
+    const { parts } = mkHub()
+    mkdirSync(join(parts, 'acc-one.partial', 'x'), { recursive: true })
+    mkdirSync(join(parts, 'acc-two'), { recursive: true })
+    await sweepPartials(parts)
+    expect(readdirSync(parts)).toEqual(['acc-two'])
+    await sweepPartials(join(parts, 'missing'))
+  })
+
+  test('rm failures during cleanup never abort the import', async () => {
+    const n = fakeNexus()
+    const bad = join(n.parts, 'wa-bad')
+    mkdirSync(bad)
+    const { hub, parts, diwanDir } = mkHub()
+    const failingRm = vi.fn().mockRejectedValue(new Error('EBUSY'))
+    const r = await applyImport(
+      plan(item('bad', join(n.root, 'nope'), 'B'), item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')),
+      {
+        hub,
+        partitionsDir: parts,
+        setupSession: () => {},
+        log: quiet(diwanDir),
+        rm: failingRm as never,
+      },
+    )
+    expect(r.imported).toEqual(['A'])
+    expect(r.failed.map((f) => f.name)).toEqual(['B'])
+    expect(failingRm).toHaveBeenCalled()
+  })
+
+  test('importing twice yields one account per source; markImported only when all are in', async () => {
+    const n = fakeNexus()
+    mkdirSync(join(n.parts, `wa-${ID_B}`))
+    writeFileSync(join(n.parts, `wa-${ID_B}`, 'f'), 'b')
+    const { hub, parts, diwanDir } = mkHub()
+    const deps = { hub, partitionsDir: parts, setupSession: () => {}, log: quiet(diwanDir) }
+    const two = plan(
+      item(ID_A, join(n.parts, `wa-${ID_A}`), 'A'),
+      item(ID_B, join(n.parts, `wa-${ID_B}`), 'B'),
+    )
+    // B's source is gone for the first run -> partial success
+    const broken = plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A'), item(ID_B, join(n.root, 'gone'), 'B'))
+    const r1 = await applyImport(broken, deps)
+    expect(r1).toMatchObject({ imported: ['A'] })
+    expect(r1.failed).toHaveLength(1)
+    expect(hub.store.get().importedFromNexus).toBe(false)
+    const already = new Set(hub.accounts().flatMap((a) => (a.importedFrom ? [a.importedFrom] : [])))
+    const p2 = planImport({ nexusConfig: n.cfg, nexusPartitions: n.parts }, fsPlanDeps, already)
+    expect(p2.available).toBe(false)
+    expect(p2.reason).toBe('Already imported')
+    const r2 = await applyImport(two, deps)
+    expect(r2.imported).toEqual(['B'])
+    expect(hub.accounts()).toHaveLength(2)
+    expect(hub.store.get().importedFromNexus).toBe(true)
+  })
+
+  test('plan after partial success offers only the failed one', () => {
+    const n = fakeNexus()
+    mkdirSync(join(n.parts, `wa-${ID_B}`))
+    writeFileSync(
+      n.cfg,
+      JSON.stringify({
+        accounts: [
+          { id: ID_A, name: 'A', order: 0 },
+          { id: ID_B, name: 'B', order: 1 },
+        ],
+      }),
+    )
+    const p = planImport({ nexusConfig: n.cfg, nexusPartitions: n.parts }, fsPlanDeps, new Set([ID_A]))
+    expect(p.items.map((i) => i.sourceId)).toEqual([ID_B])
+  })
+
+  test('two concurrent imports: one runs, one rejects', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    const deps = { hub, partitionsDir: parts, setupSession: () => {}, log: quiet(diwanDir) }
+    const p = plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A'))
+    const results = await Promise.allSettled([applyImport(p, deps), applyImport(p, deps)])
+    expect(results.map((r) => r.status).sort()).toEqual(['fulfilled', 'rejected'])
+    expect(hub.accounts()).toHaveLength(1)
+  })
+
+  test('Nexus starting mid-import fails the item and cleans up', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    const r = await applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+      isNexusRunning: () => true,
+    })
+    expect(r.failed[0].error).toMatch(/Nexus started during the import/)
+    expect(readdirSync(parts)).toEqual([])
+    expect(hub.accounts()).toEqual([])
+  })
+
+  test('recovery mode rejects at once and copies nothing', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    vi.spyOn(hub.store, 'recovery', 'get').mockReturnValue(true)
+    await expect(
+      applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+        hub,
+        partitionsDir: parts,
+        setupSession: () => {},
+        log: quiet(diwanDir),
+      }),
+    ).rejects.toThrow(/settings file is damaged/)
+    expect(existsSync(parts)).toBe(false)
+  })
+
+  test('a failed copy (unreadable file halfway) leaves nothing behind', async () => {
+    if (process.getuid?.() === 0) return
+    const n = fakeNexus()
+    const src = join(n.parts, `wa-${ID_A}`)
+    writeFileSync(join(src, 'zz-unreadable'), 'x')
+    chmodSync(join(src, 'zz-unreadable'), 0)
+    const { hub, parts, diwanDir } = mkHub()
+    const r = await applyImport(plan(item(ID_A, src, 'Ghost')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+    })
+    expect(r.imported).toEqual([])
+    expect(r.failed[0].name).toBe('Ghost')
+    expect(readdirSync(parts)).toEqual([])
+    expect(hub.accounts()).toEqual([])
+    expect(hub.store.get().importedFromNexus).toBe(false)
+  })
+
+  test('nexusRunning checks the process name', () => {
+    const n = fakeNexus()
+    symlinkSync('host-4242', join(n.userData, 'SingletonLock'))
+    const alive = () => true
+    expect(nexusRunning(n.userData, alive, () => 'electron')).toBe(true)
+    expect(nexusRunning(n.userData, alive, () => 'firefox')).toBe(false)
+    expect(nexusRunning(n.userData, alive, () => null)).toBe(true)
   })
 
   test('dirSize of a missing folder is 0', () => {

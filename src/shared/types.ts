@@ -7,6 +7,7 @@ export interface Account {
   muted: boolean
   customAvatar: boolean
   createdAt: string
+  importedFrom?: string
 }
 
 export interface NotificationSettings {

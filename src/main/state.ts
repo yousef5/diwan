@@ -80,7 +80,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     })
   }
 
-  addAccount(name: string, color: string, id: string = randomUUID()): Account {
+  addAccount(name: string, color: string, id: string = randomUUID(), importedFrom?: string): Account {
     const account: Account = {
       id,
       name: name.trim(),
@@ -90,6 +90,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
       muted: false,
       customAvatar: false,
       createdAt: new Date().toISOString(),
+      ...(importedFrom ? { importedFrom } : {}),
     }
     this.store.update((f) => {
       f.accounts.push(account)

@@ -26,6 +26,7 @@ const unavailable = (reason: string): ImportPlan => ({
 export function planImport(
   paths: { nexusConfig: string; nexusPartitions: string },
   deps: PlanDeps,
+  alreadyImported: ReadonlySet<string> = new Set(),
 ): ImportPlan {
   const raw = deps.readText(paths.nexusConfig)
   if (raw === null) return unavailable('Nexus is not installed on this computer')
@@ -42,7 +43,7 @@ export function planImport(
     .sort((a, b) => (a.order ?? 0) - (b.order ?? 0))
   const accounts = sorted.filter((a, i) => sorted.findIndex((b) => b.id === a.id) === i)
   const items: ImportItem[] = accounts
-    .filter((a) => dirs.has(`wa-${a.id}`))
+    .filter((a) => dirs.has(`wa-${a.id}`) && !alreadyImported.has(a.id))
     .map((a, i) => {
       const sourceDir = join(paths.nexusPartitions, `wa-${a.id}`)
       return {
@@ -55,6 +56,8 @@ export function planImport(
     })
   const live = new Set(accounts.map((a) => `wa-${a.id}`))
   const orphanDirs = [...dirs].filter((d) => d.startsWith('wa-') && !live.has(d)).length
+  if (items.length === 0 && accounts.some((a) => alreadyImported.has(a.id) && dirs.has(`wa-${a.id}`)))
+    return { ...unavailable('Already imported'), orphanDirs }
   if (items.length === 0) return { ...unavailable('Nexus has no signed-in accounts'), orphanDirs }
   return { available: true, reason: null, items, orphanDirs, nexusRunning: false }
 }

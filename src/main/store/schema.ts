@@ -51,6 +51,11 @@ const AccountSchema = z.object({
   muted: bool(false),
   customAvatar: bool(false),
   createdAt: z.string().catch(() => new Date().toISOString()),
+  importedFrom: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{1,64}$/)
+    .optional()
+    .catch(undefined),
 })
 
 const NotificationsSchema = z.object({
