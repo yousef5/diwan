@@ -12,5 +12,8 @@ describe('palette', () => {
     expect(colorForIndex(0)).toBe(ACCOUNT_COLORS[0])
     expect(colorForIndex(8)).toBe(ACCOUNT_COLORS[0])
     expect(colorForIndex(9)).toBe(ACCOUNT_COLORS[1])
+    expect(colorForIndex(-1)).toBe(ACCOUNT_COLORS[7])
+    expect(colorForIndex(Number.NaN)).toBe(ACCOUNT_COLORS[0])
+    expect(colorForIndex(Number.POSITIVE_INFINITY)).toBe(ACCOUNT_COLORS[0])
   })
 })
