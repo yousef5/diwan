@@ -1,4 +1,5 @@
-import { describe, expect, test } from 'vitest'
+import { describe, expect, test, vi } from 'vitest'
+import * as dims from '../../src/shared/image-dims'
 import { guestChannels, shellChannels } from '../../src/shared/ipc'
 import { jpegHeader, PNG_1x1, pngHeader, url, webpVp8l } from './helpers/images'
 
@@ -69,7 +70,7 @@ describe('guest channels', () => {
     const a = (dataUrl: string) => guestChannels['guest:avatar'].safeParse({ dataUrl }).success
     expect(a(url('jpeg', jpegHeader(100, 100)))).toBe(true)
     expect(a(OK_PNG)).toBe(true)
-    expect(a(url('webp', webpVp8l(300, 200)))).toBe(true)
+    expect(a(url('webp', webpVp8l(300, 200)))).toBe(false)
     expect(a(url('jpeg', jpegHeader(5000, 5000)))).toBe(false)
     expect(a(url('png', pngHeader(30000, 30000)))).toBe(false)
     expect(a(`data:image/png;base64,${btoa('hello')}`)).toBe(false)
@@ -95,5 +96,40 @@ describe('guest channels', () => {
   test('guest:online is boolean only', () => {
     expect(guestChannels['guest:online'].safeParse({ online: true }).success).toBe(true)
     expect(guestChannels['guest:online'].safeParse({ online: 'yes' }).success).toBe(false)
+  })
+})
+
+describe('review round 3', () => {
+  const ID2 = '123e4567-e89b-42d3-a456-426614174000'
+  test('undefined keys are dropped from patches', () => {
+    const r = shellChannels['account:update'].safeParse({ id: ID2, patch: { name: 'a', color: undefined } })
+    expect(Object.keys(r.data?.patch ?? {})).toEqual(['name'])
+    const s = shellChannels['settings:update'].safeParse({
+      closeToTray: false,
+      startHidden: undefined,
+      notifications: { sound: true, enabled: undefined },
+    })
+    expect(Object.keys(s.data ?? {}).sort()).toEqual(['closeToTray', 'notifications'])
+    expect(Object.keys(s.data?.notifications ?? {})).toEqual(['sound'])
+  })
+  test('oversize strings abort before expensive refine', () => {
+    const spy = vi.spyOn(dims, 'dataUrlDims')
+    const big = `data:image/png;base64,${'A'.repeat(50_000_000)}`
+    const t = performance.now()
+    expect(guestChannels['guest:avatar'].safeParse({ dataUrl: big }).success).toBe(false)
+    expect(performance.now() - t).toBeLessThan(50)
+    expect(spy).not.toHaveBeenCalled()
+    spy.mockRestore()
+  })
+  test('webp is not accepted', () => {
+    expect(guestChannels['guest:avatar'].safeParse({ dataUrl: url('webp', webpVp8l(10, 10)) }).success).toBe(
+      false,
+    )
+  })
+  test('jpeg SOF9 is parsed and capped', () => {
+    const b = jpegHeader(65535, 65535)
+    b[9] = 0xc9
+    expect(dims.imageDims(b)).toEqual({ width: 65535, height: 65535 })
+    expect(guestChannels['guest:avatar'].safeParse({ dataUrl: url('jpeg', b) }).success).toBe(false)
   })
 })

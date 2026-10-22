@@ -26,7 +26,7 @@ function jpeg(b: Uint8Array): Dims | null {
       i += 2
       continue
     }
-    if (marker === 0xc0 || marker === 0xc1 || marker === 0xc2) {
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) {
       if (i + 9 > b.length) return null
       return { height: u16be(b, i + 5), width: u16be(b, i + 7) }
     }

@@ -77,3 +77,23 @@ describe('shouldNotify edge cases', () => {
   test('disabled and muted → no', () =>
     expect(shouldNotify({ ...base, enabled: false, muted: true })).toBe(false))
 })
+
+describe('formatNotification control stripping', () => {
+  test('bidi controls in title/body/account are removed except our isolates', () => {
+    const r = formatNotification({
+      accountName: 'Wo‮rk⁩',
+      title: 'A⁩li‮',
+      body: 'hi⁦ there‏',
+      showPreview: true,
+    })
+    const stripped = r.title.replaceAll('⁨', '').replace(/⁩/g, '')
+    expect(stripped).not.toMatch(/[‪-‮⁦-⁩‎‏]/)
+    expect(r.title.match(/⁩/g)?.length).toBe(2)
+    expect(r.body).not.toMatch(/[⁦-⁩‏]/)
+  })
+  test('keeps ZWNJ and ZWJ', () => {
+    const r = formatNotification({ accountName: 'x', title: 'ي‌ي', body: '👨‍👩‍👧', showPreview: true })
+    expect(r.title).toContain('ي‌ي')
+    expect(r.body).toBe('👨‍👩‍👧')
+  })
+})

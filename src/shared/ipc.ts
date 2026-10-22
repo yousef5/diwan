@@ -6,13 +6,15 @@ import { HexColor as Color, AccountId as Id, AccountName as Name } from './valid
 
 const None = z.undefined()
 const NidSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
-const IMG_URL = /^data:image\/(png|jpeg|webp);base64,/
+const IMG_URL = /^data:image\/(png|jpeg);base64,/
 const sized = (maxW: number, maxH: number) => (u: string) => dataUrlFits(u, maxW, maxH)
 const PngDataUrl = z
   .string()
+  .max(200_000, { abort: true })
   .startsWith('data:image/png;base64,')
-  .max(200_000)
   .refine(sized(64, 64), 'bad or oversized image')
+const defined = <T extends object>(o: T) =>
+  Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T
 const anyDefined = (o: Record<string, unknown>) => Object.values(o).some((v) => v !== undefined)
 
 export const shellChannels = {
@@ -23,7 +25,8 @@ export const shellChannels = {
     patch: z
       .object({ name: Name.optional(), color: Color.optional(), muted: z.boolean().optional() })
       .strict()
-      .refine(anyDefined, 'empty patch'),
+      .refine(anyDefined, 'empty patch')
+      .transform(defined),
   }),
   'account:remove': z.object({ id: Id }),
   'account:reorder': z.object({
@@ -51,6 +54,7 @@ export const shellChannels = {
           markUrgent: z.boolean().optional(),
         })
         .strict()
+        .transform(defined)
         .optional(),
     })
     .strict()
@@ -58,7 +62,8 @@ export const shellChannels = {
       (p) =>
         anyDefined({ ...p, notifications: p.notifications && anyDefined(p.notifications) ? 1 : undefined }),
       'empty patch',
-    ),
+    )
+    .transform(defined),
   'importer:plan': None,
   'importer:apply': None,
   'app:openDataFolder': None,
@@ -83,16 +88,24 @@ export type ShellResult<C extends ShellChannel> = C extends keyof ShellResults ?
 export const guestChannels = {
   'guest:online': z.object({ online: z.boolean() }),
   'guest:avatar': z.object({
-    dataUrl: z.string().regex(IMG_URL).max(2_000_000).refine(sized(1024, 1024), 'bad or oversized image'),
+    dataUrl: z
+      .string()
+      .max(2_000_000, { abort: true })
+      .regex(IMG_URL)
+      .refine(sized(1024, 1024), 'bad or oversized image'),
   }),
   'guest:notify': z.object({
     nid: NidSchema,
-    title: z.string().max(500),
-    body: z.string().max(4000),
-    tag: z.string().max(500),
+    title: z.string().max(500, { abort: true }),
+    body: z.string().max(4000, { abort: true }),
+    tag: z.string().max(500, { abort: true }),
     icon: z.union([
       z.literal(''),
-      z.string().regex(IMG_URL).max(512_000).refine(sized(512, 512), 'bad or oversized image'),
+      z
+        .string()
+        .max(512_000, { abort: true })
+        .regex(IMG_URL)
+        .refine(sized(512, 512), 'bad or oversized image'),
     ]),
     silent: z.boolean(),
   }),
