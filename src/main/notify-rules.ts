@@ -19,6 +19,9 @@ export function formatNotification(i: {
   title: string
   body: string
 } {
-  if (!i.showPreview) return { title: i.accountName, body: 'New message' }
-  return { title: `${i.accountName} · ${i.title.trim() || 'WhatsApp'}`, body: i.body }
+  const account = `\u2068${i.accountName.trim() || 'WhatsApp'}\u2069`
+  if (!i.showPreview) return { title: account, body: 'New message' }
+  const sender = `\u2068${i.title.trim() || 'WhatsApp'}\u2069`
+  const body = i.body.replace(/\s+/g, ' ').trim().slice(0, 200) || 'New message'
+  return { title: `${account} · ${sender}`, body }
 }
