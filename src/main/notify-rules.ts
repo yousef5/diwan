@@ -11,7 +11,7 @@ export function shouldNotify(c: NotifyContext): boolean {
 }
 
 // Control, bidi and invisible format characters. ZWNJ (U+200C), ZWJ (U+200D) and tag characters stay.
-const STRIP = /[\p{Cc}\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu
+export const STRIP = /[\p{Cc}\u061c\u200b\u200e\u200f\u202a-\u202e\u2060-\u2069\ufeff]/gu
 const clean = (s: string) => s.replace(STRIP, ' ').replace(/\s+/g, ' ').trim()
 
 export function formatNotification(i: {

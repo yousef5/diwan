@@ -32,6 +32,7 @@ export interface GuestDeps {
   dev: boolean
   sendShell(cmd: ShellCommand): void
   onShortcut(action: ShortcutAction): void
+  onDestroyed?(accountId: string): void
 }
 
 // Everything a WhatsApp guest does goes through here: links, menus, keys, unread, load state.
@@ -157,5 +158,8 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     d.sendShell({ type: 'remount', id: accountId })
   })
 
-  wc.once('destroyed', () => d.registry.detach(wc.id))
+  wc.once('destroyed', () => {
+    d.registry.detach(wc.id)
+    d.onDestroyed?.(accountId)
+  })
 }

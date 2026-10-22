@@ -1,6 +1,7 @@
 import { Notification, nativeImage } from 'electron'
 import type { GuestPayload } from '../shared/ipc'
 import type { Logger } from './log'
+import { NotificationBook } from './notification-book'
 import { formatNotification, shouldNotify } from './notify-rules'
 import { escapeNotifyText } from './notify-text'
 import { createRateLimiter } from './rate-limit'
@@ -23,8 +24,7 @@ export interface NotifierDeps {
 // Native notifications for WhatsApp's own (intercepted by the guest shim). Clicking one opens
 // the account, then replays WhatsApp's onclick in that guest, which opens the right chat.
 export class Notifier {
-  private live = new Map<string, Notification>()
-  private byTag = new Map<string, string>() // `${accountId}:${tag}` → live key
+  private book = new NotificationBook<Notification>((n) => n.close())
 
   constructor(private readonly d: NotifierDeps) {}
 
@@ -63,31 +63,22 @@ export class Notifier {
       silent: !s.sound || p.silent,
       icon,
     })
-    const key = `${accountId}:${p.nid}`
-    if (p.tag) {
-      const tagKey = `${accountId}:${p.tag}`
-      const previous = this.byTag.get(tagKey)
-      if (previous) {
-        this.live.get(previous)?.close()
-        this.live.delete(previous)
-      }
-      this.byTag.set(tagKey, key)
-    }
     n.on('click', () => {
-      this.live.delete(key)
+      if (this.book.take(accountId, p.nid) !== n) return
       this.d.reveal(accountId)
       this.d.registry.guestOf(accountId)?.send('guest:notify-click', { nid: p.nid })
     })
-    n.on('close', () => this.live.delete(key))
-    this.live.get(key)?.close()
-    this.live.set(key, n)
+    n.on('close', () => this.book.forget(accountId, p.nid, n))
+    this.book.add(accountId, p.nid, p.tag ?? '', n)
     n.show()
     if (s.markUrgent && !focused) this.d.flash()
   }
 
   close(accountId: string, nid: string): void {
-    const key = `${accountId}:${nid}`
-    this.live.get(key)?.close()
-    this.live.delete(key)
+    this.book.close(accountId, nid)
+  }
+
+  forgetAccount(accountId: string): void {
+    this.book.forgetAccount(accountId)
   }
 }

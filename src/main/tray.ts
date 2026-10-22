@@ -3,6 +3,7 @@ import type { Snapshot } from '../shared/types'
 import { badgeKey, unreadTotal } from '../shared/unread'
 import type { Logger } from './log'
 import type { StateHub } from './state'
+import { trayAccountLabel, trayMenuSignature } from './tray-text'
 
 export interface TrayDeps {
   hub: StateHub
@@ -19,13 +20,20 @@ export class TrayController {
   private images = new Map<string, NativeImage>()
   private shownKey = ''
   private menuSignature = ''
+  private tooltip = ''
 
   constructor(private readonly d: TrayDeps) {}
 
   start(): boolean {
     try {
-      this.tray = new Tray(nativeImage.createFromPath(this.d.icon))
-      this.tray.setToolTip('Diwan')
+      const base = nativeImage.createFromPath(this.d.icon)
+      if (base.isEmpty()) {
+        this.d.log.warn('tray icon missing or unreadable', this.d.icon)
+        return false
+      }
+      this.tray = new Tray(base)
+      this.tooltip = 'Diwan'
+      this.tray.setToolTip(this.tooltip)
       this.tray.on('click', () => this.d.show())
       this.update(this.d.hub.snapshot())
       return true
@@ -50,21 +58,19 @@ export class TrayController {
       this.tray.setImage(image)
       this.shownKey = key
     }
-    this.tray.setToolTip(total > 0 ? `Diwan · ${total} unread` : 'Diwan')
+    const tip = total > 0 ? `Diwan · ${total} unread` : 'Diwan'
+    if (tip !== this.tooltip) {
+      this.tooltip = tip
+      this.tray.setToolTip(tip)
+    }
 
-    const signature = JSON.stringify([
-      s.accounts.map((a) => [a.id, a.name, a.muted, s.runtime[a.id]?.unread ?? 0]),
-      s.settings.notifications.enabled,
-    ])
+    const signature = trayMenuSignature(s)
     if (signature === this.menuSignature) return
     this.menuSignature = signature
 
     const accountItems: MenuItemConstructorOptions[] = s.accounts.map((a) => {
       const n = s.runtime[a.id]?.unread ?? 0
-      return {
-        label: `${a.name}${n > 0 ? `  (${n})` : ''}${a.muted ? '  · muted' : ''}`,
-        click: () => this.d.reveal(a.id),
-      }
+      return { label: trayAccountLabel(a.name, n, a.muted), click: () => this.d.reveal(a.id) }
     })
     this.tray.setContextMenu(
       Menu.buildFromTemplate([
@@ -76,7 +82,11 @@ export class TrayController {
           label: 'Pause notifications',
           type: 'checkbox',
           checked: !s.settings.notifications.enabled,
-          click: (item) => this.d.hub.updateSettings({ notifications: { enabled: !item.checked } }),
+          click: (item) => {
+            this.d.hub.updateSettings({ notifications: { enabled: !item.checked } })
+            this.menuSignature = ''
+            this.update(this.d.hub.snapshot())
+          },
         },
         { type: 'separator' },
         { label: 'Quit Diwan', click: () => this.d.quit() },
