@@ -25,8 +25,10 @@ export async function logoutAccount(id: string, d: LogoutDeps): Promise<void> {
   d.setRuntime(id, { state: 'loggingOut' })
   let ok = false
   try {
-    const deadline = Date.now() + (d.detachTimeoutMs ?? 5000)
-    while (d.hasGuest(id) && Date.now() < deadline) await new Promise((r) => setTimeout(r, d.pollMs ?? 50))
+    // Monotonic: a wall-clock step must neither cut the wait short nor stretch it.
+    const deadline = performance.now() + (d.detachTimeoutMs ?? 5000)
+    while (d.hasGuest(id) && performance.now() < deadline)
+      await new Promise((r) => setTimeout(r, d.pollMs ?? 50))
     if (d.hasGuest(id)) d.log.warn('logout: guest did not detach in time', { id })
     await d.clearSession(id)
     d.removeAvatar(id)

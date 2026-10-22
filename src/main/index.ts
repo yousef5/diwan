@@ -284,7 +284,7 @@ function start(): void {
     shellWc.on('render-process-gone', (_e, details) => {
       log.error('shell renderer gone', { reason: details.reason })
       if (details.reason === 'clean-exit' || w.isDestroyed()) return
-      const now = Date.now()
+      const now = performance.now() // monotonic: interval math, not a timestamp
       shellCrashes = shellCrashes.filter((t) => now - t <= 60_000)
       if (shellCrashes.length >= 3) {
         log.error('shell crashed 3 times in 60 s, not reloading it again')

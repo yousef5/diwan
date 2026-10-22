@@ -28,7 +28,11 @@ export function createOnlineSync(d: OnlineDeps) {
 
   function tryReload(id: string): void {
     if (!d.hasGuest(id)) return
-    const wait = (lastReload.get(id) ?? Number.NEGATIVE_INFINITY) + windowMs - Date.now()
+    // Monotonic, and never more than one window whatever the clock does.
+    const wait = Math.min(
+      windowMs,
+      (lastReload.get(id) ?? Number.NEGATIVE_INFINITY) + windowMs - performance.now(),
+    )
     if (wait > 0) {
       if (retry.has(id)) return // never stack timers
       retry.set(
@@ -42,7 +46,7 @@ export function createOnlineSync(d: OnlineDeps) {
       )
       return
     }
-    lastReload.set(id, Date.now())
+    lastReload.set(id, performance.now())
     d.setState(id, 'loading')
     d.reloadGuest(id)
   }

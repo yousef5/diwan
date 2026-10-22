@@ -14,7 +14,8 @@ import { watchHang } from './watchdog'
 // Crash times per account. Module-level on purpose: every remount is a NEW webContents, so a
 // counter inside wireGuest would restart at zero each time.
 const crashLog = new Map<string, number[]>()
-let clock: () => number = Date.now
+// Monotonic: a wall-clock step must not keep old crashes inside the 60 s window.
+let clock: () => number = () => performance.now()
 
 export function resetCrashes(accountId: string): void {
   crashLog.delete(accountId)
@@ -154,7 +155,7 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     }
     d.log.error('guest renderer gone', { accountId, reason: details.reason })
     const now = clock()
-    const crashes = (crashLog.get(accountId) ?? []).filter((t) => now - t <= 60_000)
+    const crashes = (crashLog.get(accountId) ?? []).filter((t) => t <= now && now - t <= 60_000)
     crashes.push(now)
     crashLog.set(accountId, crashes)
     if (crashes.length >= 3) {

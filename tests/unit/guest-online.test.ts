@@ -58,3 +58,16 @@ test('the retry does nothing when the account recovered or the guest is gone', (
   vi.advanceTimersByTime(20_000)
   expect(a.reloads).toHaveBeenCalledTimes(1)
 })
+
+test('a backward wall-clock step does not stretch the reload window', () => {
+  const { sync, reloads } = setup()
+  sync.report('a', true)
+  vi.advanceTimersByTime(1000)
+  expect(reloads).toHaveBeenCalledTimes(1)
+  sync.report('a', false)
+  vi.advanceTimersByTime(1000)
+  vi.setSystemTime(Date.now() - 3_600_000)
+  sync.report('a', true)
+  vi.advanceTimersByTime(20_000) // well past the 10 s window, but not past the 1 h step
+  expect(reloads).toHaveBeenCalledTimes(2)
+})

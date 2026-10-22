@@ -149,3 +149,18 @@ describe('wireGuest unread from the title', () => {
     expect(hub.runtimeOf('t').unread).toBe(0)
   })
 })
+
+test('crashes "in the future" of a clock that jumped back do not count', () => {
+  resetCrashes('a')
+  let t = 5_000_000
+  setClock(() => t)
+  const { hub, sent, wire } = setup()
+  wire('a').emit('render-process-gone', {}, { reason: 'crashed' })
+  wire('a').emit('render-process-gone', {}, { reason: 'crashed' })
+  t = 1_000_000
+  wire('a').emit('render-process-gone', {}, { reason: 'crashed' })
+  expect(sent).toHaveLength(3)
+  expect(hub.runtimeOf('a').state).not.toBe('failed')
+  resetCrashes('a')
+  setClock(() => performance.now())
+})

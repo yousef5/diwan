@@ -91,7 +91,7 @@ export function guardGuest<E extends IpcEventLike>(opts: {
 // Per-account limits checked before any parsing: a hostile page looping on the bridge costs
 // almost nothing. WhatsApp itself stays far below them.
 export function guestLimits(
-  now: () => number = Date.now,
+  now: () => number = () => performance.now(),
 ): Partial<Record<GuestChannel, (key: string) => boolean>> {
   return {
     'guest:avatar': createRateLimiter(1, 30_000, now),
