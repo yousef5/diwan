@@ -20,13 +20,26 @@ export function chatUrl(phone: string | null, text: string | null): string {
 const MAILTO_KEYS = ['to', 'cc', 'bcc', 'subject', 'body']
 
 // Drop everything but the address and plain compose fields: mail clients have honoured
-// ?attach= / ?attachment= to attach local files.
-function safeMailto(u: URL): string {
-  const keep = new URLSearchParams()
-  for (const [key, value] of u.searchParams) {
-    if (MAILTO_KEYS.includes(key.toLowerCase())) keep.append(key, value)
+// ?attach= / ?attachment= to attach local files. The kept query parts stay byte-for-byte
+// as written, because in a mailto link '+' is a literal plus (not a space).
+function safeMailto(u: URL): string | null {
+  try {
+    const address = decodeURIComponent(u.pathname)
+    if (address.includes('?') || address.includes('&')) return null
+  } catch {
+    return null
   }
-  return `mailto:${u.pathname}${keep.size ? `?${keep}` : ''}`
+  const parts = u.search
+    .slice(1)
+    .split('&')
+    .filter((part) => {
+      try {
+        return MAILTO_KEYS.includes(decodeURIComponent(part.split('=')[0]).toLowerCase())
+      } catch {
+        return false
+      }
+    })
+  return `mailto:${u.pathname}${parts.length ? `?${parts.join('&')}` : ''}`
 }
 
 export function classifyLink(raw: string): LinkAction {
@@ -47,8 +60,10 @@ export function classifyLink(raw: string): LinkAction {
       return u.origin === WA_ORIGIN
         ? { kind: 'download', url: u.href }
         : { kind: 'blocked', reason: 'foreign blob' }
-    case 'mailto:':
-      return { kind: 'external', url: safeMailto(u) }
+    case 'mailto:': {
+      const url = safeMailto(u)
+      return url ? { kind: 'external', url } : { kind: 'blocked', reason: 'mailto address' }
+    }
     case 'tel:':
       return { kind: 'external', url: u.href }
     case 'http:':

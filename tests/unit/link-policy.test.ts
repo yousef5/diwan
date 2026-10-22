@@ -80,6 +80,13 @@ describe('classifyLink', () => {
     ['mailto:a@b.c\n', { kind: 'external', url: 'mailto:a@b.c' }],
     [' tel:+20100', { kind: 'external', url: 'tel:+20100' }],
     ['blob:https://web.whatsapp.com/1b2c\n', { kind: 'download', url: 'blob:https://web.whatsapp.com/1b2c' }],
+    [
+      'mailto:a@b.c?subject=hello%20world&attach=x',
+      { kind: 'external', url: 'mailto:a@b.c?subject=hello%20world' },
+    ],
+    ['mailto:a@b.c?subject=a+b', { kind: 'external', url: 'mailto:a@b.c?subject=a+b' }],
+    ['mailto:a@b.c%3Fattach=/etc/passwd', { kind: 'blocked', reason: 'mailto address' }],
+    ['mailto:a@b.c%26attach=/etc/passwd', { kind: 'blocked', reason: 'mailto address' }],
     ['not a url', { kind: 'blocked', reason: 'invalid url' }],
   ]
   test.each(cases)('%s', (url, expected) => {
