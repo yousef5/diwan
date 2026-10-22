@@ -1,5 +1,9 @@
 import { describe, expect, test } from 'vitest'
 import { guestChannels, shellChannels } from '../../src/shared/ipc'
+import { jpegHeader, PNG_1x1, pngHeader, url, webpVp8l } from './helpers/images'
+
+const ID = '123e4567-e89b-42d3-a456-426614174000'
+const OK_PNG = `data:image/png;base64,${PNG_1x1}`
 
 describe('shell channels', () => {
   test('account:add validates name and colour', () => {
@@ -15,10 +19,39 @@ describe('shell channels', () => {
     expect(shellChannels['settings:update'].safeParse({ window: { maximized: true } }).success).toBe(false)
   })
   test('tray:setBadges accepts only PNG data URLs', () => {
-    expect(shellChannels['tray:setBadges'].safeParse({ none: 'data:image/png;base64,AAAA' }).success).toBe(
-      true,
-    )
+    const b = (v: unknown) => shellChannels['tray:setBadges'].safeParse(v).success
+    expect(b({ none: OK_PNG })).toBe(true)
+    expect(b({ evil: OK_PNG })).toBe(false)
+    expect(b({ none: url('png', pngHeader(65, 1)) })).toBe(false)
+    expect(b({ none: 'data:image/png;base64,AAAA' })).toBe(false)
     expect(shellChannels['tray:setBadges'].safeParse({ none: 'https://x/y.png' }).success).toBe(false)
+  })
+  test('account:update patch is strict and non-empty', () => {
+    const p = (patch: unknown) => shellChannels['account:update'].safeParse({ id: ID, patch }).success
+    expect(p({})).toBe(false)
+    expect(p({ name: undefined })).toBe(false)
+    expect(p({ zoom: 1 })).toBe(false)
+    expect(p({ name: 'a' })).toBe(true)
+    expect(p({ name: '\u200b\u200b' })).toBe(false)
+  })
+  test('account:update rejects non-canonical ids', () => {
+    expect(
+      shellChannels['account:update'].safeParse({ id: '-'.repeat(36), patch: { name: 'a' } }).success,
+    ).toBe(false)
+  })
+  test('settings:update needs a defined value', () => {
+    expect(shellChannels['settings:update'].safeParse({}).success).toBe(false)
+    expect(shellChannels['settings:update'].safeParse({ notifications: {} }).success).toBe(false)
+    expect(shellChannels['settings:update'].safeParse({ closeToTray: undefined }).success).toBe(false)
+    expect(shellChannels['settings:update'].safeParse({ closeToTray: false }).success).toBe(true)
+  })
+  test('account:reorder rejects duplicates, allows empty', () => {
+    expect(shellChannels['account:reorder'].safeParse({ ids: [ID, ID] }).success).toBe(false)
+    expect(shellChannels['account:reorder'].safeParse({ ids: [] }).success).toBe(true)
+  })
+  test('account:zoom delta is -1, 0 or 1', () => {
+    expect(shellChannels['account:zoom'].safeParse({ id: ID, delta: -1 }).success).toBe(true)
+    expect(shellChannels['account:zoom'].safeParse({ id: ID, delta: 2 }).success).toBe(false)
   })
   test('no-payload channels accept undefined', () => {
     expect(shellChannels['state:get'].safeParse(undefined).success).toBe(true)
@@ -33,9 +66,34 @@ describe('guest channels', () => {
     expect(guestChannels['guest:notify'].safeParse({ ...ok, icon: 'javascript:1' }).success).toBe(false)
   })
   test('avatar must be an image data URL', () => {
-    expect(guestChannels['guest:avatar'].safeParse({ dataUrl: 'data:image/jpeg;base64,AA' }).success).toBe(
-      true,
-    )
+    const a = (dataUrl: string) => guestChannels['guest:avatar'].safeParse({ dataUrl }).success
+    expect(a(url('jpeg', jpegHeader(100, 100)))).toBe(true)
+    expect(a(OK_PNG)).toBe(true)
+    expect(a(url('webp', webpVp8l(300, 200)))).toBe(true)
+    expect(a(url('jpeg', jpegHeader(5000, 5000)))).toBe(false)
+    expect(a(url('png', pngHeader(30000, 30000)))).toBe(false)
+    expect(a(`data:image/png;base64,${btoa('hello')}`)).toBe(false)
+    expect(a('data:image/svg+xml;base64,PHN2Zz4=')).toBe(false)
+    expect(a('data:image/gif;base64,R0lGODlhAQABAAAAACw=')).toBe(false)
+    expect(a('data:image/jpeg;base64,AA')).toBe(false)
     expect(guestChannels['guest:avatar'].safeParse({ dataUrl: 'data:text/html,<b>' }).success).toBe(false)
+  })
+  test('notify icon is dimension-capped', () => {
+    const ok = { nid: 'n1', title: 'a', body: 'b', tag: '', icon: OK_PNG, silent: false }
+    expect(guestChannels['guest:notify'].safeParse(ok).success).toBe(true)
+    expect(
+      guestChannels['guest:notify'].safeParse({ ...ok, icon: url('png', pngHeader(513, 1)) }).success,
+    ).toBe(false)
+  })
+  test('nid charset', () => {
+    const n = (nid: string) => guestChannels['guest:notify-close'].safeParse({ nid }).success
+    expect(n('__proto__')).toBe(true)
+    expect(n('a b')).toBe(false)
+    expect(n('x\n')).toBe(false)
+    expect(n('')).toBe(false)
+  })
+  test('guest:online is boolean only', () => {
+    expect(guestChannels['guest:online'].safeParse({ online: true }).success).toBe(true)
+    expect(guestChannels['guest:online'].safeParse({ online: 'yes' }).success).toBe(false)
   })
 })

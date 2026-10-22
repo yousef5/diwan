@@ -1,5 +1,8 @@
 import { z } from 'zod'
 import type { DiwanFile, Settings } from '../../shared/types'
+import { AccountId, AccountName, HexColor } from '../../shared/validators'
+
+export { AccountName, HexColor }
 
 export const SCHEMA_VERSION = 1
 
@@ -13,10 +16,6 @@ export const DEFAULT_SETTINGS: Settings = Object.freeze({
 
 const clone = <T>(v: T): T => structuredClone(v)
 
-// Strict validators, also used for IPC input.
-export const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/)
-export const AccountName = z.string().trim().min(1).max(40)
-
 // Stored-file schema: cosmetic fields are repaired instead of rejecting the whole file.
 // Only the id (partition identity), the accounts array and schemaVersion stay strict.
 const FALLBACK_COLOR = '#71717a'
@@ -24,7 +23,13 @@ const FALLBACK_NAME = 'Account'
 const bool = (fallback: boolean) => z.boolean().catch(fallback)
 
 const StoredName = AccountName.catch((ctx) =>
-  typeof ctx.input === 'string' ? ctx.input.trim().slice(0, 40).trim() || FALLBACK_NAME : FALLBACK_NAME,
+  typeof ctx.input === 'string'
+    ? ctx.input
+        .trim()
+        .slice(0, 40)
+        .trim()
+        .replace(/^[\p{Cf}\s]+$/u, '') || FALLBACK_NAME
+    : FALLBACK_NAME,
 )
 const StoredZoom = z
   .number()
@@ -38,7 +43,7 @@ const StoredZoom = z
   )
 
 const AccountSchema = z.object({
-  id: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+  id: AccountId,
   name: StoredName,
   color: HexColor.catch(FALLBACK_COLOR),
   order: z.number().finite().catch(0),
