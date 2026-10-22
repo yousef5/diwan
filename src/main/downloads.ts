@@ -1,3 +1,4 @@
+import { constants, lstatSync, readdirSync, unlinkSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 
 const MAX_NAME_BYTES = 255
@@ -61,33 +62,81 @@ export function uniquePath(dir: string, filename: string, exists: (p: string) =>
 export interface FinalizeFs {
   linkSync(existing: string, target: string): void
   unlinkSync(p: string): void
-  existsSync(p: string): boolean
+  copyFileSync(src: string, dest: string, mode?: number): void
+  // lstat-based: a dangling symlink counts as taken
+  exists(p: string): boolean
 }
 
-// Hard-links the finished staging file to a free final name (link never overwrites), then removes
-// the staging file. Returns the final path, or null when no free name was found.
+export function lstatExists(p: string): boolean {
+  try {
+    lstatSync(p)
+    return true
+  } catch {
+    return false
+  }
+}
+
+const codeOf = (e: unknown) => (e as NodeJS.ErrnoException).code
+
+// Hard-links (or, if linking is unsupported, copies) the finished staging file to a free final
+// name; neither ever overwrites. The staging file is removed only after that succeeded, so a
+// finished download is never lost. Returns the final path, or null (stage file kept, onError told).
 export function finalizeDownload(
   stage: string,
   dir: string,
   wantedName: string,
   fs: FinalizeFs,
+  onError: (message: string, e?: unknown) => void = () => {},
 ): string | null {
-  try {
-    for (let attempt = 0; attempt < 20; attempt++) {
-      const candidate = uniquePath(dir, wantedName, (p) => fs.existsSync(p))
+  const tried = new Set<string>()
+  let lastError: unknown
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const candidate = uniquePath(dir, wantedName, (p) => tried.has(p) || fs.exists(p))
+    tried.add(candidate)
+    let done = false
+    try {
+      fs.linkSync(stage, candidate)
+      done = true
+    } catch (e) {
+      if (codeOf(e) === 'EEXIST') continue
       try {
-        fs.linkSync(stage, candidate)
-        return candidate
-      } catch (e) {
-        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+        fs.copyFileSync(stage, candidate, constants.COPYFILE_EXCL)
+        done = true
+      } catch (c) {
+        lastError = c
+        if (codeOf(c) === 'EEXIST') continue
+        break
       }
     }
-    return null
-  } finally {
+    if (done) {
+      try {
+        fs.unlinkSync(stage)
+      } catch {
+        // leftover stage is swept later
+      }
+      return candidate
+    }
+  }
+  onError(`could not save finished download; kept at ${stage}`, lastError)
+  return null
+}
+
+// Removes old .diwan-*.part(.crdownload) regular files in one folder; never follows symlinks.
+export function sweepStaleDownloadParts(downloadsDir: string, maxAgeMs = 86_400_000, now = Date.now()): void {
+  let names: string[]
+  try {
+    names = readdirSync(downloadsDir)
+  } catch {
+    return
+  }
+  for (const name of names) {
+    if (!/^\.diwan-.+\.part(\.crdownload)?$/.test(name)) continue
+    const p = join(downloadsDir, name)
     try {
-      fs.unlinkSync(stage)
+      const st = lstatSync(p)
+      if (st.isFile() && now - st.mtimeMs > maxAgeMs) unlinkSync(p)
     } catch {
-      // already gone
+      // best effort
     }
   }
 }

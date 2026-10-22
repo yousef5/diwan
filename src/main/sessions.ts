@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto'
-import { existsSync, linkSync, lstatSync, unlinkSync } from 'node:fs'
+import { copyFileSync, linkSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { Notification, type Session, session, shell } from 'electron'
 import type { Account } from '../shared/types'
-import { finalizeDownload, uniquePath } from './downloads'
+import { finalizeDownload, lstatExists, uniquePath } from './downloads'
 import { allowGuestPermission, chromeUserAgent, partitionOf, pickSpellLanguages } from './guest-config'
 import type { Logger } from './log'
 import { escapeNotifyText } from './notify-text'
@@ -14,15 +14,6 @@ const pendingDownloads = new Set<string>()
 const accountBySession = new Map<Session, string>()
 const liveNotifications = new Set<Notification>()
 const allowDownload = createRateLimiter(10, 10_000)
-
-function lstatExists(p: string): boolean {
-  try {
-    lstatSync(p)
-    return true
-  } catch {
-    return false
-  }
-}
 
 // Must run before the account's <webview> attaches (startup, add, import).
 export function setupGuestSession(accountId: string, d: { downloads: string; log: Logger }): Session {
@@ -68,18 +59,22 @@ export function setupGuestSession(accountId: string, d: { downloads: string; log
         try {
           if (state !== 'completed') {
             d.log.warn('download did not complete', { state })
-            try {
-              unlinkSync(stageFile)
-            } catch {
-              // nothing was written
+            for (const f of [stageFile, `${stageFile}.crdownload`]) {
+              try {
+                unlinkSync(f)
+              } catch {
+                // nothing was written
+              }
             }
             return
           }
-          const final = finalizeDownload(stageFile, d.downloads, basename(reserved), {
-            linkSync,
-            unlinkSync,
-            existsSync,
-          })
+          const final = finalizeDownload(
+            stageFile,
+            d.downloads,
+            basename(reserved),
+            { linkSync, unlinkSync, copyFileSync, exists: lstatExists },
+            (m, e) => d.log.warn(m, e),
+          )
           if (!final) {
             d.log.warn('download could not be saved: no free name')
             return

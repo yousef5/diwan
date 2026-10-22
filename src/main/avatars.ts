@@ -1,22 +1,10 @@
-import {
-  closeSync,
-  existsSync,
-  mkdirSync,
-  openSync,
-  readSync,
-  renameSync,
-  rmSync,
-  statSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, renameSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { type NativeImage, nativeImage } from 'electron'
-import { imageDims } from '../shared/image-dims'
 import { AccountId } from '../shared/validators'
+import { avatarFileOk } from './avatar-check'
 
 const SIZE = 128
-const MAX_FILE_BYTES = 10 * 1024 * 1024
-const MAX_DIM = 4096
 
 function normalize(img: NativeImage): NativeImage | null {
   if (img.isEmpty()) return null
@@ -58,21 +46,7 @@ export class AvatarFiles {
   // Header-checked import from disk: size and pixel dimensions are validated before decoding.
   saveFromFile(id: string, path: string): string | null {
     this.file(id)
-    try {
-      if (statSync(path).size > MAX_FILE_BYTES) return null
-      const head = Buffer.alloc(64 * 1024)
-      const fd = openSync(path, 'r')
-      let len: number
-      try {
-        len = readSync(fd, head, 0, head.length, 0)
-      } finally {
-        closeSync(fd)
-      }
-      const dims = imageDims(head.subarray(0, len))
-      if (!dims || dims.width > MAX_DIM || dims.height > MAX_DIM) return null
-    } catch {
-      return null
-    }
+    if (!avatarFileOk(path)) return null
     return this.save(id, nativeImage.createFromPath(path))
   }
 
