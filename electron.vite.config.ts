@@ -3,6 +3,7 @@ import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
 import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
+import pkg from './package.json'
 
 const CSP = [
   "default-src 'self'",
@@ -69,6 +70,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
+    define: { __APP_VERSION__: JSON.stringify(pkg.version) },
     build: { minify: true, rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') } },
     plugins: [react(), tailwindcss(), cspInBuild()],
   },
