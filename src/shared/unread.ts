@@ -9,7 +9,7 @@ export function toAsciiDigits(s: string): string {
 
 // WhatsApp Web puts the unread count in the page title: "(3) WhatsApp", "(٣) واتساب".
 export function parseUnread(title: string): number {
-  const m = toAsciiDigits(title).match(/\((\d{1,5})\)/)
+  const m = toAsciiDigits(title).match(/^\s*\((\d{1,5})\)/)
   return m ? Number(m[1]) : 0
 }
 
@@ -23,9 +23,10 @@ export const BADGE_KEYS = ['none', '1', '2', '3', '4', '5', '6', '7', '8', '9', 
 export type BadgeKey = (typeof BADGE_KEYS)[number]
 
 export function badgeKey(total: number): BadgeKey {
-  if (total <= 0) return 'none'
-  if (total > 9) return '9+'
-  return String(total) as BadgeKey
+  const n = Number.isFinite(total) ? Math.floor(total) : 0
+  if (n < 1) return 'none'
+  if (n > 9) return '9+'
+  return String(n) as BadgeKey
 }
 
 export function windowTitle(total: number): string {

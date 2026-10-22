@@ -23,6 +23,11 @@ describe('parseUnread', () => {
     ['(١٢) واتساب', 12],
     ['(۷) WhatsApp', 7],
     ['', 0],
+    ['Mom (2)', 0],
+    ['WhatsApp (3)', 0],
+    ['(3)', 3],
+    ['(0) WhatsApp', 0],
+    ['  (4) WhatsApp', 4],
   ])('%s → %i', (title, n) => {
     expect(parseUnread(title)).toBe(n)
   })
@@ -37,7 +42,11 @@ describe('totals and badges', () => {
   })
   test('badgeKey', () => {
     expect(badgeKey(0)).toBe('none')
+    expect(badgeKey(1)).toBe('1')
     expect(badgeKey(4)).toBe('4')
+    expect(badgeKey(9)).toBe('9')
+    expect(badgeKey(-2)).toBe('none')
+    expect(badgeKey(Number.NaN)).toBe('none')
     expect(badgeKey(10)).toBe('9+')
     expect(BADGE_KEYS).toEqual(['none', '1', '2', '3', '4', '5', '6', '7', '8', '9', '9+'])
   })
