@@ -1,6 +1,7 @@
 import {
   chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readdirSync,
   readFileSync,
@@ -497,5 +498,103 @@ describe('Store', () => {
     expect(s2.recovery).toBe(false)
     expect(['Two', 'Three']).toContain(s2.get().accounts[0].name)
     expect(() => read('diwan.json.bak')).not.toThrow()
+  })
+
+  test('a good main loads even when .bak is a directory', () => {
+    const s = new Store(dir, 0)
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    mkdirSync(join(dir, 'diwan.json.bak'))
+    const s2 = new Store(dir, 0)
+    expect(s2.recovery).toBe(false)
+    expect(s2.source).toBe('file')
+    expect(s2.get().accounts).toHaveLength(1)
+  })
+
+  test('flush() called from onError does not recurse', () => {
+    let calls = 0
+    const ref: { store?: Store } = {}
+    const store = new Store(
+      dir,
+      10_000,
+      () => {
+        calls++
+        ref.store?.flush()
+      },
+      {
+        writeFileSync: (() => {
+          throw new Error('ENOSPC')
+        }) as never,
+      },
+    )
+    ref.store = store
+    store.update((f) => {
+      f.importedFromNexus = true
+    })
+    expect(() => store.flush()).toThrow('ENOSPC')
+    expect(calls).toBe(1)
+  })
+
+  test('debounce 0 failure reports via onError and re-arms the retry', () => {
+    vi.useFakeTimers()
+    try {
+      const fail = { on: true }
+      const errors: unknown[] = []
+      const s = new Store(dir, 0, (e) => errors.push(e), {
+        writeFileSync: ((f: string, d: string, o: never) => {
+          if (fail.on) throw new Error('ENOSPC')
+          writeFileSync(f, d, o)
+        }) as never,
+      })
+      expect(() =>
+        s.update((f) => {
+          f.importedFromNexus = true
+        }),
+      ).toThrow('ENOSPC')
+      expect(errors).toHaveLength(1)
+      fail.on = false
+      vi.advanceTimersByTime(1000)
+      expect(read('diwan.json').importedFromNexus).toBe(true)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('rotation is skipped when main does not parse; the old .bak is kept', () => {
+    const s = new Store(dir, 0)
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    s.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    const bak = readFileSync(join(dir, 'diwan.json.bak'), 'utf8')
+    writeFileSync(join(dir, 'diwan.json'), 'damaged after load')
+    s.update((f) => {
+      f.accounts[0].name = 'Three'
+    })
+    expect(readFileSync(join(dir, 'diwan.json.bak'), 'utf8')).toBe(bak)
+    expect(read('diwan.json').accounts[0].name).toBe('Three')
+  })
+
+  test('a read-back mismatch throws and leaves main untouched', () => {
+    const s0 = new Store(dir, 0)
+    s0.update((f) => {
+      f.accounts.push(account)
+    })
+    const before = readFileSync(join(dir, 'diwan.json'), 'utf8')
+    const s = new Store(dir, 0, undefined, {
+      readFileSync: ((p: string, e: never) => {
+        const r = readFileSync(p, e)
+        return String(p).endsWith('.tmp') ? `${r} ` : r
+      }) as never,
+    })
+    expect(() =>
+      s.update((f) => {
+        f.accounts[0].name = 'Two'
+      }),
+    ).toThrow('read-back')
+    expect(readFileSync(join(dir, 'diwan.json'), 'utf8')).toBe(before)
   })
 })

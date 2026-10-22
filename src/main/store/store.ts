@@ -54,6 +54,7 @@ export class Store {
   private mainGood = false
   private dirty = false
   private failures = 0
+  private flushing = false
   private _recovery = false
   private _source: LoadSource = 'default'
   private readonly fs: StoreFs
@@ -94,17 +95,9 @@ export class Store {
 
   // Writes any pending change now. May throw; the change stays pending so the next call retries.
   flush(): void {
+    if (this.flushing) return
     this.clearTimer()
-    if (!this.dirty) return
-    try {
-      this.writeNow()
-      this.failures = 0
-    } catch (e) {
-      this.failures++
-      this.arm(backoff(this.failures))
-      this.report(e)
-      throw e
-    }
+    if (this.dirty) this.save()
   }
 
   startFresh(): void {
@@ -118,7 +111,7 @@ export class Store {
     this.mainGood = false
     this.data = deepFreeze(defaultFile())
     this.dirty = true
-    this.writeNow()
+    this.save()
   }
 
   private probe(p: string): Probe {
@@ -145,14 +138,15 @@ export class Store {
       this._source = 'default'
       return defaultFile()
     }
-    // An unreadable or newer-schema file (no downgrade) always means recovery; nothing is moved.
-    if (main.kind === 'io' || bak.kind === 'io' || main.kind === 'newer' || bak.kind === 'newer')
-      return recover()
+    // A newer-schema file (no downgrade) or an unreadable main always means recovery; nothing is moved.
+    if (main.kind === 'io' || main.kind === 'newer' || bak.kind === 'newer') return recover()
+    // .bak is always older than main, so a good main loads even if .bak is unreadable or bad.
     if (main.kind === 'good') {
       this._source = 'file'
       this.mainGood = true
       return main.file
     }
+    if (bak.kind === 'io') return recover()
     if (bak.kind === 'good') {
       if (main.kind === 'bad') {
         // Keep the damaged main for forensics; if that fails, a later save would overwrite it.
@@ -183,24 +177,40 @@ export class Store {
 
   private schedule(): void {
     if (this.debounceMs === 0) {
-      this.writeNow()
+      this.save()
       return
     }
     this.clearTimer()
-    this.arm(this.debounceMs)
+    this.arm(this.debounceMs, false)
   }
 
-  private arm(delay: number): void {
+  private arm(delay: number, retry: boolean): void {
+    this.clearTimer()
     this.timer = setTimeout(() => {
       this.timer = null
       try {
-        this.writeNow()
-      } catch (e) {
-        this.failures++
-        this.report(e)
-        this.arm(backoff(this.failures))
-      }
+        this.save()
+      } catch {} // already reported and re-armed by save()
     }, delay)
+    // Only a retry timer may not keep the process alive; the debounce must run to completion.
+    if (retry) this.timer?.unref?.()
+  }
+
+  // Writes and handles failure: report, re-arm with backoff, rethrow. Not re-entrant.
+  private save(): void {
+    if (this.flushing) return
+    this.flushing = true
+    try {
+      this.writeNow()
+      this.failures = 0
+    } catch (e) {
+      this.failures++
+      this.arm(backoff(this.failures), true)
+      this.report(e)
+      throw e
+    } finally {
+      this.flushing = false
+    }
   }
 
   // Main is only ever renamed into place after a verified read-back, so mainGood is trustworthy.
