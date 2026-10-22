@@ -85,4 +85,136 @@ describe('StateHub', () => {
     expect(() => h.addAccount('A', '#3b82f6')).toThrow()
     expect(() => h.updateSettings({ closeToTray: false })).not.toThrow()
   })
+
+  const tick = () => new Promise((r) => setTimeout(r, 0))
+  const counter = (h: StateHub) => {
+    const c = { n: 0 }
+    h.on('changed', () => c.n++)
+    return c
+  }
+  const recoveryHub = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+    writeFileSync(join(dir, 'diwan.json'), 'broken')
+    return new StateHub(new Store(dir, 0))
+  }
+
+  test('setRuntime on a removed id does nothing', async () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    h.removeAccount(a.id)
+    await tick()
+    const c = counter(h)
+    h.setRuntime(a.id, { unread: 5 })
+    await tick()
+    expect(c.n).toBe(0)
+    expect(h.snapshot().runtime[a.id]).toBeUndefined()
+    expect(h.runtimeOf(a.id).unread).toBe(0)
+  })
+
+  test('runtimeOf defaults are frozen and do not leak between ids', () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    const b = h.addAccount('B', '#14b8a6')
+    expect(() => {
+      ;(h.runtimeOf(a.id) as { unread: number }).unread = 9
+    }).toThrow()
+    expect(h.runtimeOf(b.id).unread).toBe(0)
+  })
+
+  test('setActive(unknown) is false; cycle with 0 and 1 accounts', async () => {
+    const h = hub()
+    expect(h.setActive('00000000-0000-0000-0000-000000000000')).toBe(false)
+    expect(h.cycle(1)).toBeNull()
+    const a = h.addAccount('A', '#3b82f6')
+    await tick()
+    const c = counter(h)
+    expect(h.cycle(1)).toBe(a.id)
+    await tick()
+    expect(c.n).toBe(0)
+  })
+
+  test('remove cleans up runtime', () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    h.setRuntime(a.id, { unread: 4 })
+    h.removeAccount(a.id)
+    expect(h.runtimeOf(a.id).unread).toBe(0)
+    expect(h.snapshot().activeId).toBeNull()
+  })
+
+  test('persistWindow does not emit', async () => {
+    const h = hub()
+    await tick()
+    const c = counter(h)
+    h.persistWindow({ bounds: null, maximized: true })
+    await tick()
+    expect(c.n).toBe(0)
+  })
+
+  test('recovery: remove, markImported, reorder, update do not emit', async () => {
+    const h = recoveryHub()
+    h.importAvailable = true
+    await tick()
+    const c = counter(h)
+    const id = '00000000-0000-0000-0000-000000000001'
+    h.removeAccount(id)
+    h.markImported()
+    h.reorder([id])
+    h.updateAccount(id, { name: 'x' })
+    h.updateSettings({ closeToTray: false })
+    await tick()
+    expect(c.n).toBe(0)
+    expect(h.importAvailable).toBe(true)
+  })
+
+  test('unknown-id remove/update and unchanged reorder do not emit', async () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    const b = h.addAccount('B', '#14b8a6')
+    await tick()
+    const c = counter(h)
+    const ghost = '00000000-0000-0000-0000-000000000009'
+    h.removeAccount(ghost)
+    h.updateAccount(ghost, { name: 'x' })
+    h.updateAccount(a.id, { name: 'A', muted: false })
+    h.reorder([a.id, b.id])
+    await tick()
+    expect(c.n).toBe(0)
+    h.updateAccount(a.id, { name: 'A2' })
+    await tick()
+    expect(c.n).toBe(1)
+  })
+
+  test('a throwing listener goes to onListenerError; later emits still happen', async () => {
+    const errors: unknown[] = []
+    const h = new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0), (e) => errors.push(e))
+    let calls = 0
+    h.on('changed', () => {
+      calls++
+      throw new Error('boom')
+    })
+    const a = h.addAccount('A', '#3b82f6')
+    await tick()
+    h.setRuntime(a.id, { unread: 1 })
+    await tick()
+    expect(errors).toHaveLength(2)
+    expect(calls).toBe(2)
+  })
+
+  test('a failing write still adds the account, emits and reports', async () => {
+    const errors: unknown[] = []
+    const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+    const store = new Store(dir, 300, (e) => errors.push(e), {
+      writeFileSync: () => {
+        throw new Error('disk full')
+      },
+    })
+    const h = new StateHub(store)
+    const c = counter(h)
+    const a = h.addAccount('A', '#3b82f6')
+    await tick()
+    expect(h.accounts().map((x) => x.id)).toEqual([a.id])
+    expect(c.n).toBe(1)
+    expect(errors.length).toBeGreaterThan(0)
+  })
 })

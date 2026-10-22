@@ -11,18 +11,22 @@ import type {
 } from '../shared/types'
 import type { DeepReadonly, Store } from './store/store'
 
-const DEFAULT_RUNTIME: AccountRuntime = { state: 'loading', unread: 0, avatar: null }
+const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread: 0, avatar: null })
 
 // Owns everything the shell renders. Persistent data lives in the Store; runtime (unread,
 // load state, avatar) and the active account live here. Emits one 'changed' per tick.
 export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
+  // Not persisted. Callers must notify() after changing either of these.
   importAvailable = false
   trayAvailable = true
   private runtime = new Map<string, AccountRuntime>()
   private activeId: string | null
   private pending = false
 
-  constructor(readonly store: Store) {
+  constructor(
+    readonly store: Store,
+    private readonly onListenerError: (e: unknown) => void = (e) => console.error(e),
+  ) {
     super()
     this.activeId = this.accounts()[0]?.id ?? null
   }
@@ -66,7 +70,13 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     this.pending = true
     queueMicrotask(() => {
       this.pending = false
-      this.emit('changed', this.snapshot())
+      try {
+        this.emit('changed', this.snapshot())
+      } catch (e) {
+        try {
+          this.onListenerError(e)
+        } catch {}
+      }
     })
   }
 
@@ -87,31 +97,49 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     if (!this.activeId) this.activeId = id
     this.persistNow()
     this.notify()
-    return account
+    const stored = this.account(id)
+    if (!stored) throw new Error('account was not stored')
+    return stored as Account
   }
 
   updateAccount(
     id: string,
     patch: Partial<Pick<Account, 'name' | 'color' | 'muted' | 'zoom' | 'customAvatar'>>,
   ): void {
-    this.mutate((f) => {
-      const a = f.accounts.find((x) => x.id === id)
-      if (a) Object.assign(a, patch)
-    })
+    const cur = this.account(id)
+    if (!cur) return
+    const changed = (Object.keys(patch) as (keyof typeof patch)[]).some(
+      (k) => patch[k] !== undefined && patch[k] !== cur[k],
+    )
+    if (!changed) return
+    if (
+      this.mutate((f) => {
+        const a = f.accounts.find((x) => x.id === id)
+        if (a) Object.assign(a, patch)
+      })
+    )
+      this.persistNow()
   }
 
   removeAccount(id: string): void {
-    this.mutate((f) => {
-      f.accounts = f.accounts.filter((a) => a.id !== id).map((a, i) => ({ ...a, order: i }))
-    })
+    if (!this.account(id)) return
+    if (
+      !this.mutate((f) => {
+        f.accounts = f.accounts.filter((a) => a.id !== id).map((a, i) => ({ ...a, order: i }))
+      })
+    )
+      return
     this.runtime.delete(id)
     if (this.activeId === id) this.activeId = this.accounts()[0]?.id ?? null
-    this.notify()
     this.persistNow()
   }
 
   reorder(ids: string[]): void {
     const pos = new Map(ids.map((id, i) => [id, i]))
+    const next = this.accounts()
+      .map((a) => a)
+      .sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9) || a.order - b.order)
+    if (next.every((a, i) => a.id === this.accounts()[i]?.id && a.order === i)) return
     this.mutate((f) => {
       f.accounts.sort((a, b) => (pos.get(a.id) ?? 1e9) - (pos.get(b.id) ?? 1e9) || a.order - b.order)
       f.accounts.forEach((a, i) => {
@@ -137,6 +165,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   }
 
   setRuntime(id: string, patch: Partial<AccountRuntime>): void {
+    if (!this.account(id)) return
     const cur = this.runtimeOf(id)
     const next = { ...cur, ...patch }
     if (cur.state === next.state && cur.unread === next.unread && cur.avatar === next.avatar) return
@@ -161,11 +190,13 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   }
 
   markImported(): void {
-    this.mutate((f) => {
-      f.importedFromNexus = true
-    })
+    if (
+      !this.mutate((f) => {
+        f.importedFromNexus = true
+      })
+    )
+      return
     this.importAvailable = false
-    this.notify()
     this.persistNow()
   }
 
@@ -178,9 +209,10 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     } catch {}
   }
 
-  private mutate(fn: (f: DiwanFile) => void): void {
-    if (this.store.recovery) return
+  private mutate(fn: (f: DiwanFile) => void): boolean {
+    if (this.store.recovery) return false
     this.store.update(fn)
     this.notify()
+    return true
   }
 }
