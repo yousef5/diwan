@@ -1,5 +1,5 @@
 import type { WebContents } from 'electron'
-import type { ShellCommand } from '../shared/types'
+import type { AccountRuntime, ShellCommand, ViewState } from '../shared/types'
 import { parseUnread } from '../shared/unread'
 import { popupContextMenu } from './context-menu-popup'
 import { loadStateForError } from './guest-config'
@@ -38,7 +38,14 @@ export interface GuestDeps {
 // Everything a WhatsApp guest does goes through here: links, menus, keys, unread, load state.
 export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): void {
   d.registry.attach(wc, accountId)
-  d.hub.setRuntime(accountId, { state: 'loading' }) // a fresh (or remounted) guest starts clean
+  // A logging-out account is being torn down: its old guest's events must not touch the state
+  // (the logout handler sets 'loading' itself once the guest is detached).
+  const loggingOut = () => d.hub.runtimeOf(accountId).state === 'loggingOut'
+  const setState = (state: ViewState, extra: Partial<AccountRuntime> = {}) => {
+    if (loggingOut()) return
+    d.hub.setRuntime(accountId, { ...extra, state })
+  }
+  setState('loading') // a fresh (or remounted) guest starts clean
   // the user agent is set once on the session (sessions.ts), not per guest
 
   wc.setWindowOpenHandler(({ url }) => {
@@ -81,7 +88,7 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     }
     // a committed WhatsApp page clears a stale failure; did-stop-loading then marks it ready
     const s = d.hub.runtimeOf(accountId).state
-    if (s === 'offline' || s === 'failed') d.hub.setRuntime(accountId, { state: 'loading' })
+    if (s === 'offline' || s === 'failed') setState('loading')
   })
   wc.on('will-redirect', (details) => {
     if (!details.isMainFrame || isWhatsAppOrigin(details.url)) return
@@ -107,37 +114,39 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
 
   wc.on('page-title-updated', (_e, title) => {
     // while loading, a title without a "(N)" prefix is the bare page title: keep the old badge
+    if (loggingOut()) return
     if (d.hub.runtimeOf(accountId).state === 'loading' && !/^\s*\(/.test(title)) return
     d.hub.setRuntime(accountId, { unread: parseUnread(title) })
   })
 
   wc.on('did-start-loading', () => {
     const state = d.hub.runtimeOf(accountId).state
-    if (state !== 'offline' && state !== 'failed') d.hub.setRuntime(accountId, { state: 'loading' })
+    if (state !== 'offline' && state !== 'failed') setState('loading')
   })
   wc.on('did-stop-loading', () => {
     if (d.hub.runtimeOf(accountId).state !== 'loading') return
     // a page that is not WhatsApp (blank, error page) must show Retry, not an empty "ready"
     if (!isWhatsAppOrigin(wc.getURL())) {
-      d.hub.setRuntime(accountId, { state: 'failed' })
+      setState('failed')
       return
     }
     // the title guard ignores bare titles while loading and Chromium won't re-fire the event: re-read it
-    d.hub.setRuntime(accountId, { state: 'ready', unread: parseUnread(wc.getTitle()) })
+    setState('ready', { unread: parseUnread(wc.getTitle()) })
   })
   wc.on('did-fail-load', (_e, code, description, _url, isMainFrame) => {
     if (!isMainFrame) return
     const state = loadStateForError(code)
     if (!state) return
-    d.hub.setRuntime(accountId, { state })
+    setState(state)
     d.log.warn('guest load failed', { accountId, code, description })
   })
   wc.on('did-finish-load', () => wc.setZoomLevel(d.hub.account(accountId)?.zoom ?? 0))
 
   wc.on('render-process-gone', (_e, details) => {
+    if (loggingOut()) return
     if (details.reason === 'clean-exit') {
       // a clean exit while still mounted means the page died on its own
-      if (!wc.isDestroyed()) d.hub.setRuntime(accountId, { state: 'failed' })
+      if (!wc.isDestroyed()) setState('failed')
       return
     }
     d.log.error('guest renderer gone', { accountId, reason: details.reason })
@@ -147,14 +156,15 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
     crashLog.set(accountId, crashes)
     if (crashes.length >= 3) {
       d.log.error('guest crashed 3 times in 60 s, giving up', { accountId })
-      d.hub.setRuntime(accountId, { state: 'failed' })
+      setState('failed')
       return
     }
     d.sendShell({ type: 'remount', id: accountId })
   })
   watchHang(wc, () => {
+    if (loggingOut()) return
     d.log.warn('guest hung, remounting', { accountId })
-    d.hub.setRuntime(accountId, { state: 'hung' })
+    setState('hung')
     d.sendShell({ type: 'remount', id: accountId })
   })
 

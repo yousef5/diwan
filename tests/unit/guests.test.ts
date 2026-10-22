@@ -101,3 +101,35 @@ describe('wireGuest load state', () => {
     expect(hub.runtimeOf('c').state).toBe('failed')
   })
 })
+
+describe('wireGuest while the account is logging out', () => {
+  test('load events and title changes leave state and unread alone', () => {
+    const { hub, sent, wire } = setup()
+    const wc = wire('lo')
+    hub.setRuntime('lo', { state: 'loggingOut', unread: 4 })
+    wc.title = '(9) WhatsApp'
+    wc.emit('did-start-loading')
+    wc.emit('did-stop-loading')
+    wc.emit('did-fail-load', {}, -105, 'x', 'https://web.whatsapp.com/', true)
+    wc.emit('page-title-updated', {}, wc.title)
+    wc.emit('did-navigate', {}, 'https://web.whatsapp.com/')
+    wc.emit('render-process-gone', {}, { reason: 'crashed' })
+    expect(hub.runtimeOf('lo')).toMatchObject({ state: 'loggingOut', unread: 4 })
+    expect(sent).toHaveLength(0)
+  })
+
+  test('the watchdog firing leaves the state and does not remount', () => {
+    vi.useFakeTimers()
+    try {
+      const { hub, sent, wire } = setup()
+      const wc = wire('lw')
+      hub.setRuntime('lw', { state: 'loggingOut' })
+      wc.emit('unresponsive')
+      vi.advanceTimersByTime(11_000)
+      expect(hub.runtimeOf('lw').state).toBe('loggingOut')
+      expect(sent).toHaveLength(0)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+})
