@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
@@ -20,4 +20,75 @@ test('never throws when logging odd values', () => {
   const log = createLogger(dir, { echo: false })
   writeFileSync(join(dir, 'main.log'), '')
   expect(() => log.error('boom', new Error('x'))).not.toThrow()
+})
+
+function setup() {
+  const dir = mkdtempSync(join(tmpdir(), 'diwan-log-'))
+  return {
+    dir,
+    log: createLogger(dir, { echo: false }),
+    read: () => readFileSync(join(dir, 'main.log'), 'utf8'),
+  }
+}
+
+test('ZodError-like extras log only path and code, never the message', () => {
+  const { log, read } = setup()
+  log.error('bad', {
+    name: 'ZodError',
+    message: 'secret chat text',
+    issues: [{ path: ['body'], code: 'too_big' }],
+  })
+  expect(read()).toContain('ZodError: body:too_big')
+  expect(read()).not.toContain('secret')
+})
+
+test('long error messages are cut to 200 characters', () => {
+  const { log, read } = setup()
+  log.error('bad', new Error('y'.repeat(500)))
+  expect(read()).toContain('y'.repeat(200))
+  expect(read()).not.toContain('y'.repeat(201))
+})
+
+test('control characters in error messages become spaces', () => {
+  const { log, read } = setup()
+  log.error('bad', new Error('a\nb'))
+  expect(read()).toContain('Error: a b\n')
+})
+
+test('error cause shows its name but never its message', () => {
+  const { log, read } = setup()
+  log.error('bad', new Error('outer', { cause: new TypeError('hidden text') }))
+  expect(read()).toContain('(cause: TypeError)')
+  expect(read()).not.toContain('hidden')
+})
+
+test('circular and BigInt extras log [unserialisable]', () => {
+  const { log, read } = setup()
+  const a: Record<string, unknown> = {}
+  a.self = a
+  log.info('circ', a)
+  log.info('big', { n: 1n })
+  const lines = read().trim().split('\n')
+  expect(lines[0]).toMatch(/\[unserialisable\]$/)
+  expect(lines[1]).toMatch(/\[unserialisable\]$/)
+})
+
+test('plain object output is cut to 500 characters', () => {
+  const { log, read } = setup()
+  log.info('long', { v: 'z'.repeat(2000) })
+  expect(read()).not.toContain('z'.repeat(501))
+})
+
+test('does not throw when the dir is a regular file', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'diwan-log-'))
+  const f = join(dir, 'file')
+  writeFileSync(f, '')
+  const log = createLogger(f, { echo: false })
+  expect(() => log.info('x')).not.toThrow()
+})
+
+test('log file is private (0600)', () => {
+  const { dir, log } = setup()
+  log.info('x')
+  expect(statSync(join(dir, 'main.log')).mode & 0o777).toBe(0o600)
 })

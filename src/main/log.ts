@@ -9,11 +9,33 @@ export interface Logger {
 
 const KEEP = 3
 
+const MAX_MESSAGE = 200
+const MAX_EXTRA = 500
+
+// Error messages (ZodError, JSON.parse...) can embed chat text, so they are never logged raw.
+function safeMessage(message: string): string {
+  // biome-ignore lint/suspicious/noControlCharactersInRegex: stripping control characters is the point
+  return Array.from(message.replace(/[\u0000-\u001f\u007f]/g, ' '))
+    .slice(0, MAX_MESSAGE)
+    .join('')
+}
+
+function isZodLike(x: unknown): x is { issues: { path: unknown[]; code: string }[] } {
+  const o = x as { name?: unknown; issues?: unknown }
+  return typeof x === 'object' && x !== null && o.name === 'ZodError' && Array.isArray(o.issues)
+}
+
 function formatExtra(extra: unknown): string {
   if (extra === undefined) return ''
-  if (extra instanceof Error) return ` ${extra.name}: ${extra.message}`
   try {
-    return ` ${JSON.stringify(extra)}`
+    if (isZodLike(extra)) {
+      return ` ZodError: ${extra.issues.map((i) => `${i.path.join('.') || '(root)'}:${i.code}`).join(', ')}`
+    }
+    if (extra instanceof Error) {
+      const cause = extra.cause instanceof Error ? ` (cause: ${extra.cause.name})` : ''
+      return ` ${extra.name}: ${safeMessage(extra.message)}${cause}`
+    }
+    return ` ${JSON.stringify(extra).slice(0, MAX_EXTRA)}`
   } catch {
     return ' [unserialisable]'
   }
@@ -25,7 +47,7 @@ export function createLogger(dir: string, opts: { maxBytes?: number; echo?: bool
   const echo = opts.echo ?? true
   const file = join(dir, 'main.log')
   try {
-    mkdirSync(dir, { recursive: true })
+    mkdirSync(dir, { recursive: true, mode: 0o700 })
   } catch {}
 
   const rotate = () => {
@@ -44,7 +66,7 @@ export function createLogger(dir: string, opts: { maxBytes?: number; echo?: bool
     const line = `${new Date().toISOString()} ${level} ${msg}${formatExtra(extra)}\n`
     try {
       rotate()
-      appendFileSync(file, line)
+      appendFileSync(file, line, { mode: 0o600 })
     } catch {}
     if (echo) (level === 'error' ? console.error : console.log)(line.trimEnd())
   }
