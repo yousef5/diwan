@@ -49,6 +49,10 @@ function selfContainedPreloads(): Plugin {
 
 export default defineConfig({
   main: {
+    // electron-vite treats resources/ as main's public dir: a `?asset` import from it is NOT emitted,
+    // only referenced as ../../resources/…, which the packaged app (files: out/**) doesn't carry.
+    // Point publicDir at a folder that doesn't exist so the icons are emitted into out/main.
+    publicDir: resolve(__dirname, 'src/main/no-public-dir'),
     build: { rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } } },
   },
   preload: {
