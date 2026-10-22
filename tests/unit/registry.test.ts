@@ -27,4 +27,10 @@ describe('Registry', () => {
     r.attach(fakeWc(3, true), 'acc')
     expect(r.guestOf('acc')).toBeUndefined()
   })
+  test('detaching an unknown id is a no-op', () => {
+    const r = new Registry()
+    r.attach(fakeWc(1), 'acc')
+    r.detach(99)
+    expect(r.accountOf(1)).toBe('acc')
+  })
 })
