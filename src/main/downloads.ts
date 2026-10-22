@@ -33,7 +33,7 @@ function fitBase(base: string, ext: string, reserve: number): string {
 
 export function sanitizeFilename(name: string): string {
   const cleaned = name
-    .replace(/[/\\]|[\p{Cc}\p{Cf}]/gu, '_')
+    .replace(/[/\\]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '_')
     .trim()
     .replace(/^[.\s]+|[.\s]+$/g, '')
   if (!cleaned || cleaned === '.' || cleaned === '..') return 'download'
@@ -56,4 +56,38 @@ export function uniquePath(dir: string, filename: string, exists: (p: string) =>
     throw new Error('download path escaped its folder')
   }
   return candidate
+}
+
+export interface FinalizeFs {
+  linkSync(existing: string, target: string): void
+  unlinkSync(p: string): void
+  existsSync(p: string): boolean
+}
+
+// Hard-links the finished staging file to a free final name (link never overwrites), then removes
+// the staging file. Returns the final path, or null when no free name was found.
+export function finalizeDownload(
+  stage: string,
+  dir: string,
+  wantedName: string,
+  fs: FinalizeFs,
+): string | null {
+  try {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const candidate = uniquePath(dir, wantedName, (p) => fs.existsSync(p))
+      try {
+        fs.linkSync(stage, candidate)
+        return candidate
+      } catch (e) {
+        if ((e as NodeJS.ErrnoException).code !== 'EEXIST') throw e
+      }
+    }
+    return null
+  } finally {
+    try {
+      fs.unlinkSync(stage)
+    } catch {
+      // already gone
+    }
+  }
 }

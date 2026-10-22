@@ -64,7 +64,9 @@ export function popupContextMenu(
         return
       case 'search':
         shell
-          .openExternal(`https://www.google.com/search?q=${encodeURIComponent(params.selectionText.trim())}`)
+          .openExternal(
+            `https://www.google.com/search?q=${encodeURIComponent(Array.from(params.selectionText.trim()).slice(0, 500).join(''))}`,
+          )
           .catch((e) => o.log.warn('search open failed', e))
         return
       case 'inspect':
