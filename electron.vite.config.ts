@@ -1,7 +1,7 @@
 import { resolve } from 'node:path'
 import tailwindcss from '@tailwindcss/vite'
 import react from '@vitejs/plugin-react'
-import { defineConfig, externalizeDepsPlugin } from 'electron-vite'
+import { defineConfig } from 'electron-vite'
 import type { Plugin } from 'vite'
 
 const CSP = [
@@ -19,19 +19,42 @@ function cspInBuild(): Plugin {
   return {
     name: 'diwan-csp',
     apply: 'build',
-    transformIndexHtml: (html) =>
-      html.replace('<head>', `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}">`),
+    transformIndexHtml: () => [
+      {
+        tag: 'meta',
+        attrs: { 'http-equiv': 'Content-Security-Policy', content: CSP },
+        injectTo: 'head-prepend',
+      },
+    ],
+  }
+}
+
+// Sandboxed preloads can only require('electron'): fail the build if Rollup splits out a shared chunk
+// or a preload imports anything else.
+function selfContainedPreloads(): Plugin {
+  return {
+    name: 'diwan-self-contained-preloads',
+    apply: 'build',
+    generateBundle(_o, bundle) {
+      for (const out of Object.values(bundle)) {
+        if (out.type !== 'chunk') continue
+        if (!out.isEntry)
+          this.error(`shared preload chunk ${out.fileName}: sandboxed preloads cannot require siblings`)
+        const bad = out.imports.filter((id) => id !== 'electron')
+        if (bad.length) this.error(`preload ${out.fileName} requires ${bad.join(', ')}`)
+      }
+    },
   }
 }
 
 export default defineConfig({
   main: {
-    plugins: [externalizeDepsPlugin()],
     build: { rollupOptions: { input: { index: resolve(__dirname, 'src/main/index.ts') } } },
   },
   preload: {
-    plugins: [externalizeDepsPlugin()],
+    plugins: [selfContainedPreloads()],
     build: {
+      externalizeDeps: false,
       rollupOptions: {
         input: {
           shell: resolve(__dirname, 'src/preload/shell.ts'),
@@ -42,7 +65,7 @@ export default defineConfig({
   },
   renderer: {
     root: resolve(__dirname, 'src/renderer'),
-    build: { rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') } },
+    build: { minify: true, rollupOptions: { input: resolve(__dirname, 'src/renderer/index.html') } },
     plugins: [react(), tailwindcss(), cspInBuild()],
   },
 })

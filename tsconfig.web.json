@@ -14,5 +14,5 @@
     "skipLibCheck": true,
     "types": []
   },
-  "include": ["src/renderer/**/*", "src/shared/**/*", "src/preload/shell.ts"]
+  "include": ["src/renderer/**/*", "src/shared/**/*"]
 }
