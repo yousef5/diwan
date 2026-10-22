@@ -44,7 +44,7 @@ export interface DiwanFile {
   settings: Settings
 }
 
-export type ViewState = 'loading' | 'ready' | 'offline' | 'failed' | 'hung'
+export type ViewState = 'loading' | 'ready' | 'offline' | 'failed' | 'hung' | 'loggingOut'
 
 export interface AccountRuntime {
   state: ViewState
