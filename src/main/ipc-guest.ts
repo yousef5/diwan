@@ -2,6 +2,8 @@ import { type IpcMainEvent, ipcMain, nativeImage } from 'electron'
 import type { z } from 'zod'
 import { type GuestChannel, type GuestPayload, guestChannels } from '../shared/ipc'
 import type { AvatarFiles } from './avatars'
+import { handleGuestAvatar } from './guest-avatar'
+import { createOnlineSync } from './guest-online'
 import { guardGuest } from './ipc-guard'
 import { WA_ORIGIN } from './link-policy'
 import type { Logger } from './log'
@@ -11,8 +13,6 @@ import type { Registry } from './registry'
 import type { StateHub } from './state'
 
 const AVATAR_INTERVAL_MS = 30_000
-const ONLINE_DEBOUNCE_MS = 1000
-const RELOAD_INTERVAL_MS = 10_000
 
 function isWhatsAppMainFrame(e: IpcMainEvent): boolean {
   const f = e.senderFrame
@@ -51,49 +51,28 @@ export function registerGuestIpc(d: {
     )
   }
 
-  const onlineTimers = new Map<string, NodeJS.Timeout>()
-  const canReload = createRateLimiter(1, RELOAD_INTERVAL_MS)
-  const lastAvatar = new Map<string, string>()
-
-  function applyOnline(id: string, online: boolean): void {
-    try {
-      const state = d.hub.runtimeOf(id).state
-      if (!online) {
-        if (state === 'loggingOut') return
-        d.hub.setRuntime(id, { state: 'offline' })
-      } else if (state === 'offline' || state === 'failed') {
-        const guest = d.registry.guestOf(id)
-        if (!guest || !canReload(id)) return
-        d.hub.setRuntime(id, { state: 'loading' })
-        guest.reload()
-      }
-    } catch (e) {
-      d.log.error('guest:online failed', e)
-    }
-  }
-
-  // Act on the last reported value after a quiet second, so flapping can't thrash reloads.
-  on('guest:online', (id, { online }) => {
-    const t = onlineTimers.get(id)
-    if (t) clearTimeout(t)
-    onlineTimers.set(
-      id,
-      setTimeout(() => {
-        onlineTimers.delete(id)
-        applyOnline(id, online)
-      }, ONLINE_DEBOUNCE_MS),
-    )
+  const online = createOnlineSync({
+    getState: (id) => d.hub.runtimeOf(id).state,
+    setState: (id, state) => d.hub.setRuntime(id, { state }),
+    hasGuest: (id) => !!d.registry.guestOf(id),
+    reloadGuest: (id) => {
+      d.registry.guestOf(id)?.reload()
+      return true
+    },
+    log: d.log,
   })
-  on('guest:avatar', (id, { dataUrl }) => {
-    if (d.hub.account(id)?.customAvatar) return
-    if (lastAvatar.get(id) === dataUrl) return
-    const image = nativeImage.createFromDataURL(dataUrl) // dimensions already capped by the schema
-    if (image.isEmpty()) return
-    const url = d.avatars.save(id, image)
-    if (!url) return
-    lastAvatar.set(id, dataUrl)
-    d.hub.setRuntime(id, { avatar: url })
-  })
+  on('guest:online', (id, p) => online.report(id, p.online))
+  on('guest:avatar', (id, { dataUrl }) =>
+    handleGuestAvatar(id, dataUrl, {
+      account: (x) => d.hub.account(x),
+      currentAvatar: (x) => d.hub.runtimeOf(x).avatar,
+      decode: (u) => nativeImage.createFromDataURL(u),
+      save: (x, img) => d.avatars.save(x, img),
+      setAvatar: (x, url) => d.hub.setRuntime(x, { avatar: url }),
+    }),
+  )
   on('guest:notify', (id, payload) => d.notifier.show(id, payload))
   on('guest:notify-close', (id, { nid }) => d.notifier.close(id, nid))
 }
+
+export { forgetAvatar } from './guest-avatar'

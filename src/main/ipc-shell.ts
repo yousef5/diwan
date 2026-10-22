@@ -4,10 +4,12 @@ import type { z } from 'zod'
 import { type ShellChannel, shellChannels } from '../shared/ipc'
 import type { ImportPlan, ImportResult, ShellCommand } from '../shared/types'
 import type { AvatarFiles } from './avatars'
+import { forgetAvatar } from './guest-avatar'
 import { partitionOf } from './guest-config'
 import { resetCrashes } from './guests'
 import { guardShell } from './ipc-guard'
 import type { Logger } from './log'
+import { logoutAccount } from './logout'
 import type { Paths } from './paths'
 import type { Registry } from './registry'
 import type { StateHub } from './state'
@@ -28,13 +30,6 @@ export interface ShellIpcDeps {
   sendShell(cmd: ShellCommand): void
   planImport(): ImportPlan
   applyImport(): Promise<ImportResult>
-}
-
-const LOGOUT_DETACH_TIMEOUT_MS = 5000
-
-async function waitForDetach(registry: Registry, id: string): Promise<void> {
-  const deadline = Date.now() + LOGOUT_DETACH_TIMEOUT_MS
-  while (registry.guestOf(id) && Date.now() < deadline) await new Promise((r) => setTimeout(r, 50))
 }
 
 export function registerShellIpc(d: ShellIpcDeps): void {
@@ -77,23 +72,25 @@ export function registerShellIpc(d: ShellIpcDeps): void {
     d.hub.setRuntime(id, { state: 'loading' })
     guest.reload()
   })
-  handle('account:logout', async ({ id }) => {
-    if (!d.hub.account(id)) return
-    if (d.hub.runtimeOf(id).state === 'loggingOut') return
-    // The shell stops rendering the webview for this state; wait until it is really gone so
-    // the partition is not in use while its storage is wiped.
-    d.hub.setRuntime(id, { state: 'loggingOut' })
-    await waitForDetach(d.registry, id)
-    const ses = session.fromPartition(partitionOf(id))
-    await ses.clearStorageData()
-    await ses.clearCache()
-    d.avatars.remove(id)
-    d.forgetNotifications(id)
-    if (!d.hub.account(id)) return // removed while we were waiting
-    d.hub.updateAccount(id, { customAvatar: false })
-    d.hub.setRuntime(id, { avatar: null, unread: 0, state: 'loading' })
-    d.sendShell({ type: 'remount', id })
-  })
+  handle('account:logout', ({ id }) =>
+    logoutAccount(id, {
+      hasAccount: (x) => !!d.hub.account(x),
+      runtimeOf: (x) => d.hub.runtimeOf(x),
+      setRuntime: (x, p) => d.hub.setRuntime(x, p),
+      clearCustomAvatar: (x) => d.hub.updateAccount(x, { customAvatar: false }),
+      hasGuest: (x) => !!d.registry.guestOf(x),
+      clearSession: async (x) => {
+        const ses = session.fromPartition(partitionOf(x))
+        await ses.clearStorageData()
+        await ses.clearCache()
+      },
+      removeAvatar: (x) => d.avatars.remove(x),
+      forgetNotifications: (x) => d.forgetNotifications(x),
+      forgetAvatar,
+      sendShell: (c) => d.sendShell(c),
+      log: d.log,
+    }),
+  )
   handle('account:pickAvatar', async ({ id }) => {
     const w = d.win()
     if (!w || !d.hub.account(id) || dialogOpen) return
@@ -117,6 +114,7 @@ export function registerShellIpc(d: ShellIpcDeps): void {
   handle('account:clearAvatar', ({ id }) => {
     if (!d.hub.account(id)) return
     d.avatars.remove(id)
+    forgetAvatar(id)
     d.hub.updateAccount(id, { customAvatar: false })
     d.hub.setRuntime(id, { avatar: null })
   })
