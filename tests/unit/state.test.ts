@@ -1,0 +1,88 @@
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { describe, expect, test } from 'vitest'
+import { StateHub } from '../../src/main/state'
+import { Store } from '../../src/main/store/store'
+import type { Snapshot } from '../../src/shared/types'
+
+const hub = () => new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0))
+const nextSnapshot = (h: StateHub) => new Promise<Snapshot>((r) => h.once('changed', r))
+
+describe('StateHub', () => {
+  test('first account becomes active; snapshot has default runtime', () => {
+    const h = hub()
+    const a = h.addAccount('Personal', '#3b82f6')
+    const s = h.snapshot()
+    expect(s.activeId).toBe(a.id)
+    expect(s.runtime[a.id]).toEqual({ state: 'loading', unread: 0, avatar: null })
+  })
+
+  test('changes are batched into one event per tick', async () => {
+    const h = hub()
+    let events = 0
+    h.on('changed', () => events++)
+    h.addAccount('A', '#3b82f6')
+    h.addAccount('B', '#14b8a6')
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toBe(1)
+  })
+
+  test('remove re-indexes and moves the active account', async () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    const b = h.addAccount('B', '#14b8a6')
+    h.removeAccount(a.id)
+    const s = await nextSnapshot(h)
+    expect(s.accounts.map((x) => [x.name, x.order])).toEqual([['B', 0]])
+    expect(s.activeId).toBe(b.id)
+  })
+
+  test('reorder ignores unknown ids and keeps the rest', () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    const b = h.addAccount('B', '#14b8a6')
+    const c = h.addAccount('C', '#f59e0b')
+    h.reorder([c.id, '00000000-0000-0000-0000-000000000000', a.id])
+    expect(h.accounts().map((x) => x.name)).toEqual(['C', 'A', 'B'])
+    expect(b.id).toBeTruthy()
+  })
+
+  test('cycle wraps around', () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    const b = h.addAccount('B', '#14b8a6')
+    expect(h.cycle(1)).toBe(b.id)
+    expect(h.cycle(1)).toBe(a.id)
+    expect(h.cycle(-1)).toBe(b.id)
+  })
+
+  test('setRuntime only emits on a real change', async () => {
+    const h = hub()
+    const a = h.addAccount('A', '#3b82f6')
+    await nextSnapshot(h)
+    let events = 0
+    h.on('changed', () => events++)
+    h.setRuntime(a.id, { unread: 0 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toBe(0)
+    h.setRuntime(a.id, { unread: 3 })
+    await new Promise((r) => setTimeout(r, 0))
+    expect(events).toBe(1)
+  })
+
+  test('settings patch merges nested notifications', () => {
+    const h = hub()
+    h.updateSettings({ notifications: { sound: false } })
+    expect(h.settings().notifications).toMatchObject({ sound: false, enabled: true })
+  })
+
+  test('recovery mode: adding throws, other changes are ignored', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+    writeFileSync(join(dir, 'diwan.json'), 'broken')
+    const h = new StateHub(new Store(dir, 0))
+    expect(h.snapshot().recovery).toBe(true)
+    expect(() => h.addAccount('A', '#3b82f6')).toThrow()
+    expect(() => h.updateSettings({ closeToTray: false })).not.toThrow()
+  })
+})
