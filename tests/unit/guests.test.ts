@@ -133,3 +133,19 @@ describe('wireGuest while the account is logging out', () => {
     }
   })
 })
+
+describe('wireGuest unread from the title', () => {
+  test('only a changed count touches the state hub', () => {
+    const { hub, wire } = setup()
+    const set = vi.spyOn(hub, 'setRuntime')
+    const wc = wire('t')
+    hub.setRuntime('t', { state: 'ready' })
+    set.mockClear()
+    for (let i = 0; i < 1000; i++) wc.emit('page-title-updated', {}, i % 2 ? '(3) WhatsApp' : '(3) WhatsApp ')
+    expect(set).toHaveBeenCalledTimes(1)
+    expect(hub.runtimeOf('t').unread).toBe(3)
+    wc.emit('page-title-updated', {}, 'WhatsApp')
+    expect(set).toHaveBeenCalledTimes(2)
+    expect(hub.runtimeOf('t').unread).toBe(0)
+  })
+})

@@ -1,12 +1,13 @@
-import { mkdtempSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, test } from 'vitest'
-import { StateHub } from '../../src/main/state'
+import { afterEach, describe, expect, test, vi } from 'vitest'
+import { SNAPSHOT_GAP_MS, StateHub } from '../../src/main/state'
 import { Store } from '../../src/main/store/store'
 import type { Snapshot } from '../../src/shared/types'
 
-const hub = () => new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0))
+// gap 0: these tests are about what emits, not how often (the throttle has its own tests below)
+const hub = () => new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0), undefined, 0)
 const nextSnapshot = (h: StateHub) => new Promise<Snapshot>((r) => h.once('changed', r))
 
 describe('StateHub', () => {
@@ -187,7 +188,7 @@ describe('StateHub', () => {
 
   test('a throwing listener goes to onListenerError; later emits still happen', async () => {
     const errors: unknown[] = []
-    const h = new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0), (e) => errors.push(e))
+    const h = new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0), (e) => errors.push(e), 0)
     let calls = 0
     h.on('changed', () => {
       calls++
@@ -263,5 +264,76 @@ describe('StateHub', () => {
       h.addAccount('A again', '#3b82f6', a.id)
       expect(h.pendingFolderRemovals()).toEqual([])
     })
+  })
+})
+
+describe('StateHub snapshot throttle', () => {
+  afterEach(() => vi.useRealTimers())
+  const throttled = () => {
+    const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+    return { dir, h: new StateHub(new Store(dir, 0)) }
+  }
+  const flushMicrotasks = () => vi.advanceTimersByTimeAsync(0)
+
+  test('after a quiet spell the push goes out in the same tick', async () => {
+    vi.useFakeTimers()
+    const { h } = throttled()
+    const seen: number[] = []
+    h.on('changed', () => seen.push(Date.now()))
+    const start = Date.now()
+    h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    expect(seen).toEqual([start])
+  })
+
+  test('a flood is coalesced to one push per gap, and the last state always goes out', async () => {
+    vi.useFakeTimers()
+    const { h } = throttled()
+    const a = h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    const pushes: { at: number; unread: number }[] = []
+    h.on('changed', (s) => pushes.push({ at: Date.now(), unread: s.runtime[a.id]?.unread ?? -1 }))
+    // 1000 title changes, one per ms, each in its own macrotask
+    for (let i = 1; i <= 1000; i++) {
+      h.setRuntime(a.id, { unread: i })
+      await vi.advanceTimersByTimeAsync(1)
+    }
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    expect(pushes.length).toBeLessThanOrEqual(1000 / SNAPSHOT_GAP_MS + 1)
+    expect(pushes.length).toBeGreaterThanOrEqual(1000 / SNAPSHOT_GAP_MS - 1)
+    for (let i = 1; i < pushes.length; i++)
+      expect((pushes[i]?.at ?? 0) - (pushes[i - 1]?.at ?? 0)).toBeGreaterThanOrEqual(SNAPSHOT_GAP_MS)
+    expect(pushes.at(-1)?.unread).toBe(1000)
+    // and nothing is left pending
+    await vi.advanceTimersByTimeAsync(10 * SNAPSHOT_GAP_MS)
+    expect(pushes.at(-1)?.unread).toBe(1000)
+  })
+
+  test('a change inside the gap is delivered at its end with the latest state', async () => {
+    vi.useFakeTimers()
+    const { h } = throttled()
+    const a = h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    const got: number[] = []
+    h.on('changed', (s) => got.push(s.runtime[a.id]?.unread ?? -1))
+    await vi.advanceTimersByTimeAsync(10)
+    h.setRuntime(a.id, { unread: 1 })
+    h.setRuntime(a.id, { unread: 2 })
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS - 11)
+    expect(got).toEqual([])
+    await vi.advanceTimersByTimeAsync(1)
+    expect(got).toEqual([2])
+  })
+
+  test('persistence is not throttled: account changes hit the disk at once', async () => {
+    vi.useFakeTimers()
+    const { dir, h } = throttled()
+    h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    h.addAccount('B', '#14b8a6') // inside the gap: the push waits, the write does not
+    const onDisk = JSON.parse(readFileSync(join(dir, 'diwan.json'), 'utf8')) as {
+      accounts: { name: string }[]
+    }
+    expect(onDisk.accounts.map((x) => x.name)).toEqual(['A', 'B'])
   })
 })

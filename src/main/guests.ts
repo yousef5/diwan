@@ -115,8 +115,11 @@ export function wireGuest(wc: WebContents, accountId: string, d: GuestDeps): voi
   wc.on('page-title-updated', (_e, title) => {
     // while loading, a title without a "(N)" prefix is the bare page title: keep the old badge
     if (loggingOut()) return
-    if (d.hub.runtimeOf(accountId).state === 'loading' && !/^\s*\(/.test(title)) return
-    d.hub.setRuntime(accountId, { unread: parseUnread(title) })
+    const rt = d.hub.runtimeOf(accountId)
+    if (rt.state === 'loading' && !/^\s*\(/.test(title)) return
+    // a page can rewrite its title in a tight loop: only a changed count is worth any work
+    const unread = parseUnread(title)
+    if (unread !== rt.unread) d.hub.setRuntime(accountId, { unread })
   })
 
   wc.on('did-start-loading', () => {

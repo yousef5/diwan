@@ -1,3 +1,5 @@
+import { NID_PATTERN } from '../shared/nid'
+
 // Pure helpers for the guest preload (no electron import, so they are unit-testable).
 
 export const AVATAR_FIRST_MS = 4000 // WhatsApp needs a moment to draw its UI
@@ -38,10 +40,8 @@ export function watchAvatar(find: () => Promise<string | null>, send: (dataUrl: 
   }
 }
 
-const NID = /^[A-Za-z0-9_-]{1,64}$/
-
 // The nid of a main → guest click message, or null for anything malformed.
 export function clickNid(msg: unknown): string | null {
   const nid = typeof msg === 'object' && msg !== null ? (msg as { nid?: unknown }).nid : undefined
-  return typeof nid === 'string' && NID.test(nid) ? nid : null
+  return typeof nid === 'string' && NID_PATTERN.test(nid) ? nid : null
 }

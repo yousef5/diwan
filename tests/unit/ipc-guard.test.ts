@@ -1,6 +1,6 @@
-import { describe, expect, test, vi } from 'vitest'
+import { afterEach, describe, expect, test, vi } from 'vitest'
 import { z } from 'zod'
-import { guardGuest, guardShell } from '../../src/main/ipc-guard'
+import { guardGuest, guardShell, guestLimits } from '../../src/main/ipc-guard'
 
 const mkLog = () => ({ info: vi.fn(), warn: vi.fn(), error: vi.fn() })
 type Ev = { sender: { id: number }; main?: boolean }
@@ -114,5 +114,69 @@ describe('guardGuest', () => {
     wrap('guest:online', schema, fn)({ sender: { id: 7 } }, { online: true })
     expect(spy).not.toHaveBeenCalled()
     expect(fn).not.toHaveBeenCalled()
+  })
+})
+
+describe('guardGuest invalid-payload logging', () => {
+  afterEach(() => vi.useRealTimers())
+  const schema = z.object({ online: z.boolean() })
+
+  test('logs once per channel per account per minute', () => {
+    vi.useFakeTimers()
+    const log = mkLog()
+    const wrap = guardGuest<Ev>({
+      accountOf: (id) => ({ 7: 'a', 8: 'b' })[id],
+      isWhatsAppMainFrame: () => true,
+      log,
+    })
+    const online = wrap('guest:online', schema, vi.fn())
+    const close = wrap('guest:notify-close', schema, vi.fn())
+    for (let i = 0; i < 1000; i++) online({ sender: { id: 7 } }, {})
+    expect(log.warn).toHaveBeenCalledTimes(1)
+    online({ sender: { id: 8 } }, {}) // another account
+    close({ sender: { id: 7 } }, {}) // another channel
+    expect(log.warn).toHaveBeenCalledTimes(3)
+    vi.advanceTimersByTime(59_999)
+    online({ sender: { id: 7 } }, {})
+    expect(log.warn).toHaveBeenCalledTimes(3)
+    vi.advanceTimersByTime(1)
+    online({ sender: { id: 7 } }, {})
+    expect(log.warn).toHaveBeenCalledTimes(4)
+  })
+})
+
+describe('guestLimits', () => {
+  const run = (limit: (k: string) => boolean, key: string, n: number) =>
+    Array.from({ length: n }, () => limit(key)).filter(Boolean).length
+
+  test('notify: 30 per 10 s per account; close: 200; avatar: 1 per 30 s', () => {
+    let t = 0
+    const l = guestLimits(() => t)
+    expect(run(l['guest:notify'] as (k: string) => boolean, 'a', 100)).toBe(30)
+    expect(run(l['guest:notify'] as (k: string) => boolean, 'b', 100)).toBe(30)
+    expect(run(l['guest:notify-close'] as (k: string) => boolean, 'a', 1000)).toBe(200)
+    expect(run(l['guest:avatar'] as (k: string) => boolean, 'a', 5)).toBe(1)
+    t = 10_000
+    expect(run(l['guest:notify'] as (k: string) => boolean, 'a', 100)).toBe(30)
+    expect(run(l['guest:avatar'] as (k: string) => boolean, 'a', 5)).toBe(0)
+    t = 30_000
+    expect(run(l['guest:avatar'] as (k: string) => boolean, 'a', 5)).toBe(1)
+    expect(l['guest:online']).toBeUndefined()
+  })
+
+  test('a looping page never reaches the parser once the notify limit is spent', () => {
+    const notify = z.object({ nid: z.string() })
+    const spy = vi.spyOn(notify, 'safeParse')
+    const log = mkLog()
+    const wrap = guardGuest<Ev>({
+      accountOf: () => 'a',
+      isWhatsAppMainFrame: () => true,
+      log,
+      limits: guestLimits(() => 0),
+    })
+    const h = wrap('guest:notify', notify, vi.fn())
+    for (let i = 0; i < 10_000; i++) h({ sender: { id: 1 } }, {})
+    expect(spy).toHaveBeenCalledTimes(30)
+    expect(log.warn).toHaveBeenCalledTimes(1)
   })
 })

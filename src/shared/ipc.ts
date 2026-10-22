@@ -1,11 +1,12 @@
 import { z } from 'zod'
 import { dataUrlFits } from './image-dims'
+import { NID_PATTERN } from './nid'
 import type { Account, ImportPlan, ImportResult, Snapshot } from './types'
 import { BADGE_KEYS } from './unread'
 import { HexColor as Color, AccountId as Id, AccountName as Name } from './validators'
 
 const None = z.undefined()
-const NidSchema = z.string().regex(/^[A-Za-z0-9_-]{1,64}$/)
+const NidSchema = z.string().regex(NID_PATTERN)
 const IMG_URL = /^data:image\/(png|jpeg);base64,/
 const sized = (maxW: number, maxH: number) => (u: string) => dataUrlFits(u, maxW, maxH)
 const PngDataUrl = z

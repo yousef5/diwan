@@ -4,15 +4,12 @@ import { type GuestChannel, type GuestPayload, guestChannels } from '../shared/i
 import type { AvatarFiles } from './avatars'
 import { handleGuestAvatar } from './guest-avatar'
 import { createOnlineSync } from './guest-online'
-import { guardGuest } from './ipc-guard'
+import { guardGuest, guestLimits } from './ipc-guard'
 import { WA_ORIGIN } from './link-policy'
 import type { Logger } from './log'
 import type { Notifier } from './notifier'
-import { createRateLimiter } from './rate-limit'
 import type { Registry } from './registry'
 import type { StateHub } from './state'
-
-const AVATAR_INTERVAL_MS = 30_000
 
 function isWhatsAppMainFrame(e: IpcMainEvent): boolean {
   const f = e.senderFrame
@@ -35,7 +32,7 @@ export function registerGuestIpc(d: {
     accountOf: (id) => d.registry.accountOf(id),
     isWhatsAppMainFrame,
     log: d.log,
-    limits: { 'guest:avatar': createRateLimiter(1, AVATAR_INTERVAL_MS) },
+    limits: guestLimits(),
   })
   function on<C extends GuestChannel>(
     channel: C,

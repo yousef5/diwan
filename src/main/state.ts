@@ -14,7 +14,11 @@ import type { DeepReadonly, Store } from './store/store'
 const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread: 0, avatar: null })
 
 // Owns everything the shell renders. Persistent data lives in the Store; runtime (unread,
-// load state, avatar) and the active account live here. Emits one 'changed' per tick.
+// load state, avatar) and the active account live here. Emits one 'changed' per tick, and at
+// most one per SNAPSHOT_GAP_MS: a burst is coalesced into a trailing emit of the latest state.
+// Only the pushes are throttled; persistence (Store, persistNow) is untouched.
+export const SNAPSHOT_GAP_MS = 50
+
 export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   // Not persisted. Callers must notify() after changing either of these.
   importAvailable = false
@@ -22,10 +26,12 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   private runtime = new Map<string, AccountRuntime>()
   private activeId: string | null
   private pending = false
+  private lastEmit = Number.NEGATIVE_INFINITY
 
   constructor(
     readonly store: Store,
     private readonly onListenerError: (e: unknown) => void = (e) => console.error(e),
+    private readonly gapMs: number = SNAPSHOT_GAP_MS,
   ) {
     super()
     this.activeId = this.accounts()[0]?.id ?? null
@@ -68,16 +74,23 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   notify(): void {
     if (this.pending) return
     this.pending = true
-    queueMicrotask(() => {
-      this.pending = false
+    const wait = this.lastEmit + this.gapMs - Date.now()
+    // After a quiet spell the push goes out at the end of this tick, as before; inside the gap it
+    // waits for the gap's end and then carries whatever the state is by then.
+    if (wait <= 0) queueMicrotask(() => this.emitNow())
+    else setTimeout(() => this.emitNow(), wait).unref?.()
+  }
+
+  private emitNow(): void {
+    this.pending = false
+    this.lastEmit = Date.now()
+    try {
+      this.emit('changed', this.snapshot())
+    } catch (e) {
       try {
-        this.emit('changed', this.snapshot())
-      } catch (e) {
-        try {
-          this.onListenerError(e)
-        } catch {}
-      }
-    })
+        this.onListenerError(e)
+      } catch {}
+    }
   }
 
   addAccount(name: string, color: string, id: string = randomUUID(), importedFrom?: string): Account {

@@ -1,6 +1,7 @@
 import type { z } from 'zod'
 import type { GuestChannel } from '../shared/ipc'
 import type { Logger } from './log'
+import { createRateLimiter } from './rate-limit'
 
 // Pure wrappers around ipcMain listeners (no electron import, so they are unit-testable
 // with fake events). Every handler runs inside try/catch: a throw inside an ipcMain.on
@@ -54,6 +55,9 @@ export function guardGuest<E extends IpcEventLike>(opts: {
   log: Logger
   limits?: Partial<Record<GuestChannel, (key: string) => boolean>>
 }) {
+  // A page sending garbage in a loop must not fill (and rotate away) the log: one line per
+  // channel per account per minute.
+  const allowInvalidLog = createRateLimiter(1, 60_000)
   return function wrap<S extends z.ZodType>(
     channel: GuestChannel,
     schema: S,
@@ -67,7 +71,8 @@ export function guardGuest<E extends IpcEventLike>(opts: {
         if (limit && !limit(accountId)) return // throttled before any parsing work
         const parsed = schema.safeParse(raw)
         if (!parsed.success) {
-          opts.log.warn('invalid guest payload', { channel })
+          if (allowInvalidLog(`${channel}\u0000${accountId}`))
+            opts.log.warn('invalid guest payload', { channel })
           return
         }
         fn(accountId, parsed.data, event)
@@ -75,5 +80,17 @@ export function guardGuest<E extends IpcEventLike>(opts: {
         opts.log.error(`${channel} failed`, e)
       }
     }
+  }
+}
+
+// Per-account limits checked before any parsing: a hostile page looping on the bridge costs
+// almost nothing. WhatsApp itself stays far below them.
+export function guestLimits(
+  now: () => number = Date.now,
+): Partial<Record<GuestChannel, (key: string) => boolean>> {
+  return {
+    'guest:avatar': createRateLimiter(1, 30_000, now),
+    'guest:notify': createRateLimiter(30, 10_000, now),
+    'guest:notify-close': createRateLimiter(200, 10_000, now),
   }
 }

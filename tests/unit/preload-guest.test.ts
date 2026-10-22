@@ -52,6 +52,14 @@ describe('guest preload', () => {
     expect(guestChannels['guest:notify-close'].safeParse(sent('guest:notify-close')[0]).success).toBe(true)
   })
 
+  test('close never stringifies page objects and caps the nid', () => {
+    const hostile = { toString: () => 'x'.repeat(1_000_000) }
+    bridge.close(hostile)
+    bridge.close(42)
+    bridge.close('y'.repeat(5000))
+    expect(sent('guest:notify-close')).toEqual([{ nid: '' }, { nid: '' }, { nid: 'y'.repeat(64) }])
+  })
+
   test('a click from main replays the notification in the main world', () => {
     const onClick = electron.listeners.get(NOTIFY_CLICK)
     expect(onClick).toBeTypeOf('function')

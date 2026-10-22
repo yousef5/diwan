@@ -18,7 +18,9 @@ const CLICK: typeof NOTIFY_CLICK = 'guest:notify-click'
 // zod schema decides whether it is acceptable.
 contextBridge.exposeInMainWorld('__diwanNotify', {
   show: (payload: unknown) => ipcRenderer.send('guest:notify' satisfies GuestChannel, payload),
-  close: (nid: unknown) => send('guest:notify-close', { nid: String(nid) }),
+  // never String() an arbitrary page value: a huge or hostile object would be stringified here
+  close: (nid: unknown) =>
+    send('guest:notify-close', { nid: typeof nid === 'string' ? nid.slice(0, 64) : '' }),
 })
 contextBridge.executeInMainWorld({ func: installNotificationShim })
 
