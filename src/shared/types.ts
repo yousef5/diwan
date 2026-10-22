@@ -42,6 +42,8 @@ export interface DiwanFile {
   importedFromNexus: boolean
   accounts: Account[]
   settings: Settings
+  // Ids of removed accounts whose Partitions/acc-<id> folder is deleted again at the next start.
+  pendingFolderRemovals: string[]
 }
 
 export type ViewState = 'loading' | 'ready' | 'offline' | 'failed' | 'hung' | 'loggingOut'

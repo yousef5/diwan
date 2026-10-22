@@ -55,7 +55,12 @@ async function toPngDataUrl(src: string): Promise<string | null> {
   const w = Math.max(1, Math.round(bmp.width * scale))
   const h = Math.max(1, Math.round(bmp.height * scale))
   const canvas = new OffscreenCanvas(w, h)
-  canvas.getContext('2d')?.drawImage(bmp, 0, 0, w, h)
+  const ctx = canvas.getContext('2d')
+  if (!ctx) {
+    bmp.close()
+    return null // a blank PNG would replace the real picture
+  }
+  ctx.drawImage(bmp, 0, 0, w, h)
   bmp.close()
   const png = await canvas.convertToBlob({ type: 'image/png' })
   const url = await new Promise<string | null>((resolve) => {

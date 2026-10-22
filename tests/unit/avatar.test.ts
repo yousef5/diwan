@@ -69,7 +69,7 @@ describe('pickAvatar', () => {
 })
 
 describe('findAvatarDataUrl', () => {
-  function stubImagePipeline(size: { width: number; height: number }, out = 'image/png') {
+  function stubImagePipeline(size: { width: number; height: number }, out = 'image/png', has2d = true) {
     const canvases: { w: number; h: number }[] = []
     vi.stubGlobal(
       'fetch',
@@ -86,7 +86,7 @@ describe('findAvatarDataUrl', () => {
           canvases.push({ w, h })
         }
         getContext() {
-          return { drawImage: () => {} }
+          return has2d ? { drawImage: () => {} } : null
         }
         async convertToBlob() {
           return new Blob(['png'], { type: out })
@@ -108,6 +108,12 @@ describe('findAvatarDataUrl', () => {
     await expect(findAvatarDataUrl(document)).resolves.toMatch(/^data:image\/png;base64,/)
     expect(canvases).toEqual([{ w: 256, h: 256 }])
     expect(fetch).toHaveBeenCalledWith('https://pps.whatsapp.net/v/own.jpg')
+  })
+
+  test('no 2D context gives null, never a blank PNG', async () => {
+    stubImagePipeline({ width: 96, height: 96 }, 'image/png', false)
+    addImg('https://pps.whatsapp.net/v/own.jpg', own)
+    await expect(findAvatarDataUrl(document)).resolves.toBeNull()
   })
 
   test('anything but a PNG gives null', async () => {

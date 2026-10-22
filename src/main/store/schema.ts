@@ -90,6 +90,9 @@ const DiwanFileSchema = z.object({
   importedFromNexus: z.boolean().default(false).catch(true),
   accounts: z.array(AccountSchema),
   settings: SettingsSchema.catch(() => clone(DEFAULT_SETTINGS)),
+  // Added within schema 1 (absent in older files, so it defaults like importedFromNexus). Damage drops
+  // the whole list: a lost tombstone only leaves a leftover folder, never deletes one.
+  pendingFolderRemovals: z.array(AccountId).catch([]),
 })
 
 // Validates, fills defaults, drops unknown keys and duplicate ids, sorts by order, re-indexes.
@@ -100,7 +103,7 @@ export function parseDiwanFile(raw: unknown): DiwanFile {
     .filter((a) => !seen.has(a.id) && seen.add(a.id))
     .sort((a, b) => a.order - b.order)
     .map((a, i) => ({ ...a, order: i }))
-  return { ...f, accounts }
+  return { ...f, accounts, pendingFolderRemovals: [...new Set(f.pendingFolderRemovals)] }
 }
 
 export function defaultFile(): DiwanFile {

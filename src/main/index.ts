@@ -18,7 +18,7 @@ import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
 import { createLogger } from './log'
 import { Notifier } from './notifier'
-import { orphanSweepAllowed, sweepOrphanPartitions } from './orphan-partitions'
+import { sweepRemovedAccountFolders } from './orphan-partitions'
 import { resolvePaths } from './paths'
 import { Registry } from './registry'
 import { accountForSession, setupGuestSession } from './sessions'
@@ -52,18 +52,14 @@ function start(): void {
   void sweepPartials(paths.partitions).catch((e) => log.warn('could not sweep partial imports', e))
   sweepStaleDownloadParts(paths.downloads) // synchronous; handles its own errors
   // A removed account's folder can come back as an empty shell (Electron keeps its session in memory
-  // until quit). Swept only when the account list is trustworthy, and before any guest session exists.
-  const orphanSweep = orphanSweepAllowed(store)
-    ? sweepOrphanPartitions(
-        paths.partitions,
-        hub.accounts().map((a) => a.id),
-      ).then(
-        (removed) => {
-          if (removed.length) log.info('removed leftover account folders', { count: removed.length })
-        },
-        (e) => log.warn('could not sweep leftover account folders', e),
-      )
-    : Promise.resolve()
+  // until quit). Only tombstoned ids are swept, only from a trusted account list, and before any
+  // guest session exists. The sweep never rejects.
+  const folderSweep = sweepRemovedAccountFolders(paths.partitions, hub).then(
+    (removed) => {
+      if (removed.length) log.info('removed leftover account folders', { count: removed.length })
+    },
+    (e) => log.warn('could not sweep leftover account folders', e),
+  )
   let win: BrowserWindow | null = null
   let quitting = false
   // Saves the window geometry now; set by createWindow.
@@ -368,7 +364,7 @@ function start(): void {
   app
     .whenReady()
     .then(async () => {
-      await orphanSweep
+      await folderSweep
       Menu.setApplicationMenu(null)
       session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
       for (const a of hub.accounts()) {

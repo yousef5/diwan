@@ -13,6 +13,7 @@ describe('parseDiwanFile', () => {
       importedFromNexus: false,
       accounts: [],
       settings: DEFAULT_SETTINGS,
+      pendingFolderRemovals: [],
     })
   })
 
@@ -132,6 +133,12 @@ describe('parseDiwanFile', () => {
     test('importedFromNexus', () => {
       expect(parse({ importedFromNexus: 'yes' }).importedFromNexus).toBe(true)
       expect(parse({}).importedFromNexus).toBe(false)
+    })
+    test('pendingFolderRemovals: missing or damaged gives [], duplicates are dropped', () => {
+      expect(parse({}).pendingFolderRemovals).toEqual([])
+      expect(parse({ pendingFolderRemovals: 'x' }).pendingFolderRemovals).toEqual([])
+      expect(parse({ pendingFolderRemovals: [id1, '../etc'] }).pendingFolderRemovals).toEqual([])
+      expect(parse({ pendingFolderRemovals: [id1, id2, id1] }).pendingFolderRemovals).toEqual([id1, id2])
     })
     test('repaired name has no trailing space', () => {
       const f = parse({ accounts: [{ id: id1, name: `${'x'.repeat(39)} yy`, color: '#3b82f6', order: 0 }] })

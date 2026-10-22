@@ -94,6 +94,8 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     }
     this.store.update((f) => {
       f.accounts.push(account)
+      // A re-added id (re-import) owns its folder again: it must never be swept.
+      f.pendingFolderRemovals = f.pendingFolderRemovals.filter((p) => p !== id)
     })
     if (!this.activeId) this.activeId = id
     this.persistNow()
@@ -127,11 +129,30 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     if (
       !this.mutate((f) => {
         f.accounts = f.accounts.filter((a) => a.id !== id).map((a, i) => ({ ...a, order: i }))
+        // Same update: Chromium may write the folder back before quitting, so it is deleted again
+        // at the next start. Only tombstoned ids are ever swept, never mere absence from the list.
+        if (!f.pendingFolderRemovals.includes(id)) f.pendingFolderRemovals.push(id)
       })
     )
       return
     this.runtime.delete(id)
     if (this.activeId === id) this.activeId = this.accounts()[0]?.id ?? null
+    this.persistNow()
+  }
+
+  pendingFolderRemovals(): readonly string[] {
+    return this.store.get().pendingFolderRemovals
+  }
+
+  clearFolderRemovals(ids: readonly string[]): void {
+    const drop = new Set(ids)
+    if (!this.pendingFolderRemovals().some((id) => drop.has(id))) return
+    if (
+      !this.mutate((f) => {
+        f.pendingFolderRemovals = f.pendingFolderRemovals.filter((id) => !drop.has(id))
+      })
+    )
+      return
     this.persistNow()
   }
 

@@ -217,4 +217,51 @@ describe('StateHub', () => {
     expect(c.n).toBe(1)
     expect(errors.length).toBeGreaterThan(0)
   })
+
+  describe('folder removals (tombstones)', () => {
+    test('removing an account tombstones its id in the same store update, and persists it', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+      const h = new StateHub(new Store(dir, 0))
+      const a = h.addAccount('A', '#3b82f6')
+      const b = h.addAccount('B', '#14b8a6')
+      const update = h.store.update.bind(h.store)
+      const files: { accounts: string[]; pending: string[] }[] = []
+      h.store.update = (fn) => {
+        update(fn)
+        const f = h.store.get()
+        files.push({ accounts: f.accounts.map((x) => x.id), pending: [...f.pendingFolderRemovals] })
+      }
+      h.removeAccount(a.id)
+      expect(files).toEqual([{ accounts: [b.id], pending: [a.id] }])
+      expect(new Store(dir, 0).get().pendingFolderRemovals).toEqual([a.id])
+    })
+
+    test('a removal in recovery mode tombstones nothing', () => {
+      const h = recoveryHub()
+      h.removeAccount('649d14d5-ebb9-4ed6-9725-633b89c6ceac')
+      expect(h.pendingFolderRemovals()).toEqual([])
+    })
+
+    test('clearFolderRemovals drops only the given ids, and persists', () => {
+      const dir = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+      const h = new StateHub(new Store(dir, 0))
+      const a = h.addAccount('A', '#3b82f6')
+      const b = h.addAccount('B', '#14b8a6')
+      h.removeAccount(a.id)
+      h.removeAccount(b.id)
+      h.clearFolderRemovals([a.id])
+      expect(h.pendingFolderRemovals()).toEqual([b.id])
+      expect(new Store(dir, 0).get().pendingFolderRemovals).toEqual([b.id])
+      h.clearFolderRemovals([])
+      expect(h.pendingFolderRemovals()).toEqual([b.id])
+    })
+
+    test('re-adding a tombstoned id (re-import) clears its tombstone', () => {
+      const h = hub()
+      const a = h.addAccount('A', '#3b82f6')
+      h.removeAccount(a.id)
+      h.addAccount('A again', '#3b82f6', a.id)
+      expect(h.pendingFolderRemovals()).toEqual([])
+    })
+  })
 })

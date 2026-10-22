@@ -27,7 +27,10 @@ export function installNotificationShim(): void {
   const found = w.__diwanNotify
   if (!found || w.__diwanShimmed) return
   const bridge: Bridge = found
-  w.__diwanShimmed = true
+  // Hidden from Object.keys(window): page code that enumerates globals shouldn't trip over them.
+  const hide = (key: string, value: unknown) =>
+    Object.defineProperty(window, key, { value, enumerable: false, configurable: true, writable: true })
+  hide('__diwanShimmed', true)
 
   // Main keeps its own bounded book and never reports a desktop dismissal here, so cap this side too.
   const MAX_LIVE = 100
@@ -40,6 +43,8 @@ export function installNotificationShim(): void {
   let seq = 0
   // nids restart on every page load; a per-page token keeps an old click from matching a new notification
   const pageToken = Math.random().toString(36).slice(2, 10) || '0'
+  // Cut to max UTF-16 units without leaving a lone high surrogate (half an emoji) at the end.
+  const cut = (text: string, max: number): string => text.slice(0, max).replace(/[\uD800-\uDBFF]$/, '')
 
   // Re-encode to a small PNG inside the page: Electron's nativeImage can't decode WebP, and main
   // only accepts PNG/JPEG with capped dimensions. Gives '' when anything fails.
@@ -54,7 +59,12 @@ export function installNotificationShim(): void {
         const w = Math.max(1, Math.round(bmp.width * scale))
         const h = Math.max(1, Math.round(bmp.height * scale))
         const canvas = new OffscreenCanvas(w, h)
-        canvas.getContext('2d')?.drawImage(bmp, 0, 0, w, h)
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          bmp.close()
+          return '' // never send a blank PNG as the contact's picture
+        }
+        ctx.drawImage(bmp, 0, 0, w, h)
         bmp.close()
         const png = await canvas.convertToBlob({ type: 'image/png' })
         return new Promise<string>((resolve) => {
@@ -69,8 +79,9 @@ export function installNotificationShim(): void {
   }
 
   class DiwanNotification extends EventTarget {
-    constructor(title: string, options: NotificationOptions & { icon?: string } = {}) {
+    constructor(title: string, opts?: (NotificationOptions & { icon?: string }) | null) {
       super()
+      const options = opts ?? {} // the native constructor accepts null too
       const self = this as unknown as ShimNote
       self.title = String(title)
       self.body = String(options.body ?? '')
@@ -87,16 +98,19 @@ export function installNotificationShim(): void {
       live.set(self.nid, self)
       if (live.size > MAX_LIVE) {
         const oldest = live.keys().next().value
-        if (oldest !== undefined) live.delete(oldest)
+        if (oldest !== undefined) {
+          live.delete(oldest)
+          bridge.close(oldest) // don't leave its desktop notification behind
+        }
       }
       void toPngDataUrl(self.icon, 256).then((icon) => {
         // WhatsApp may close it (read on the phone) while the icon was still being prepared.
         if (live.get(self.nid) !== self) return
         bridge.show({
           nid: self.nid,
-          title: self.title.slice(0, MAX_TITLE),
-          body: self.body.slice(0, MAX_BODY),
-          tag: self.tag.slice(0, MAX_TAG),
+          title: cut(self.title, MAX_TITLE),
+          body: cut(self.body, MAX_BODY),
+          tag: cut(self.tag, MAX_TAG),
           icon: icon.startsWith('data:image/png;base64,') && icon.length <= MAX_ICON ? icon : '',
           silent: self.silent,
         })
@@ -134,7 +148,7 @@ export function installNotificationShim(): void {
     }
   }
 
-  w.__diwanClick = (nid: string) => {
+  hide('__diwanClick', (nid: string) => {
     const n = live.get(nid)
     if (!n) return
     live.delete(nid)
@@ -142,7 +156,8 @@ export function installNotificationShim(): void {
     const ev = new Event('click', { cancelable: true })
     n.onclick?.call(n, ev)
     n.dispatchEvent(ev)
-  }
+  })
+  Object.defineProperty(DiwanNotification, 'name', { value: 'Notification', configurable: true })
 
   Object.defineProperty(window, 'Notification', {
     value: DiwanNotification,

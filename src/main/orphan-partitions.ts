@@ -1,53 +1,84 @@
-import { lstat, readdir, rm } from 'node:fs/promises'
+import { rm as fsRm, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AccountId } from '../shared/validators'
 import type { LoadSource } from './store/store'
 
-const PREFIX = 'acc-'
-
 // Removing an account deletes its Partitions/acc-<id> folder, but Electron keeps that session in
-// memory and Chromium may write an empty shell of the folder back before quitting. Those are swept
-// at the next startup. Only exact acc-<uuid> names qualify: acc-<id>.partial import leftovers
-// belong to sweepPartials, and anything else in the folder is not ours to judge.
-export function orphanPartitions(names: readonly string[], accountIds: Iterable<string>): string[] {
-  const known = new Set(accountIds)
-  return names.filter((n) => {
-    if (!n.startsWith(PREFIX)) return false
-    const id = n.slice(PREFIX.length)
-    return AccountId.safeParse(id).success && !known.has(id)
-  })
+// memory and Chromium may write an empty shell of the folder back before quitting. So the removal
+// also leaves a tombstone (pendingFolderRemovals, written in the same store update), and the next
+// start deletes the folder again. A folder is NEVER deleted just because no account lists it: an
+// account list loaded from .bak, or rebuilt by "Start fresh", can miss accounts that still exist.
+
+export interface FolderRemovalPlan {
+  remove: string[] // ids whose acc-<id> folder may be deleted
+  settle: string[] // tombstones to drop without touching anything
 }
 
-// Only an account list read from diwan.json itself is trusted to say what is an orphan. Recovery
-// mode has no list at all, a .bak may predate the newest accounts, and a missing file says nothing.
+// Pure decision: delete only tombstoned ids that are not accounts now. A tombstoned id that is an
+// account again (re-import) owns its folder; an entry that isn't an exact uuid never becomes a path.
+export function planFolderRemovals(
+  pending: readonly string[],
+  accountIds: Iterable<string>,
+): FolderRemovalPlan {
+  const known = new Set(accountIds)
+  const plan: FolderRemovalPlan = { remove: [], settle: [] }
+  for (const id of new Set(pending)) {
+    if (AccountId.safeParse(id).success && !known.has(id)) plan.remove.push(id)
+    else plan.settle.push(id)
+  }
+  return plan
+}
+
+// Only an account list read from diwan.json itself is trusted at all. Recovery mode has no list,
+// a .bak may predate the newest accounts, and a missing file says nothing.
 export function orphanSweepAllowed(store: { recovery: boolean; source: LoadSource }): boolean {
   return !store.recovery && store.source === 'file'
 }
 
-// Deletes orphan account folders. Only plain directories are removed (lstat: a symlink is never
-// followed). Returns the names it removed; a folder that can't be read or removed is skipped.
-export async function sweepOrphanPartitions(
+export interface FolderSweepHub {
+  readonly store: { recovery: boolean; source: LoadSource }
+  accounts(): readonly { id: string }[]
+  pendingFolderRemovals(): readonly string[]
+  clearFolderRemovals(ids: readonly string[]): void
+}
+
+// Deletes the folders of tombstoned accounts. Only plain directories are removed (lstat: a symlink
+// is never followed); a tombstone whose path is missing, a symlink or a file is settled untouched.
+// A failed delete keeps its tombstone for the next start. Returns the folder names it removed.
+export async function sweepRemovedAccountFolders(
   partitionsDir: string,
-  accountIds: Iterable<string>,
+  hub: FolderSweepHub,
+  deps: { rm?: (path: string, opts: { recursive: true; force: true }) => Promise<void> } = {},
 ): Promise<string[]> {
-  let names: string[]
-  try {
-    names = await readdir(partitionsDir)
-  } catch {
-    return []
-  }
+  if (!orphanSweepAllowed(hub.store)) return []
+  const rm = deps.rm ?? fsRm
+  const plan = planFolderRemovals(
+    hub.pendingFolderRemovals(),
+    hub.accounts().map((a) => a.id),
+  )
+  const settled = [...plan.settle]
   const removed: string[] = []
-  for (const n of orphanPartitions(names, accountIds)) {
-    const dir = join(partitionsDir, n)
-    const isPlainDir = await lstat(dir).then(
-      (st) => st.isDirectory(),
-      () => false,
-    )
-    if (!isPlainDir) continue
+  for (const id of plan.remove) {
+    const name = `acc-${id}`
+    const dir = join(partitionsDir, name)
+    let isPlainDir: boolean
+    try {
+      isPlainDir = (await lstat(dir)).isDirectory()
+    } catch (e) {
+      // Gone already: nothing left to do. Any other error: try again next start.
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') settled.push(id)
+      continue
+    }
+    if (!isPlainDir) {
+      settled.push(id)
+      continue
+    }
     try {
       await rm(dir, { recursive: true, force: true })
-      removed.push(n)
+      removed.push(name)
+      settled.push(id)
     } catch {}
   }
+  hub.clearFolderRemovals(settled)
   return removed
 }

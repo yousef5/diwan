@@ -151,10 +151,41 @@ describe('notification shim', () => {
     const lastClick = vi.fn()
     last.onclick = lastClick
     await vi.waitFor(() => expect(bridge.show).toHaveBeenCalledTimes(101))
+    expect(bridge.close).toHaveBeenCalledExactlyOnceWith(shown(0).nid) // the desktop one goes too
     w.__diwanClick?.(shown(0).nid)
     w.__diwanClick?.(shown(100).nid)
     expect(firstClick).not.toHaveBeenCalled()
     expect(lastClick).toHaveBeenCalledOnce()
+  })
+
+  test('accepts null options, like the native constructor', async () => {
+    notify('Ali', null as unknown as NotificationOptions)
+    await vi.waitFor(() => expect(bridge.show).toHaveBeenCalledOnce())
+    expect(shown()).toMatchObject({ title: 'Ali', body: '', tag: '', icon: '', silent: false })
+  })
+
+  test('a cut never leaves half an emoji behind', async () => {
+    const emoji = '\u{1F600}' // two UTF-16 units: high + low surrogate
+    notify(`${'t'.repeat(499)}${emoji}`, {
+      body: `${'b'.repeat(3999)}${emoji}`,
+      tag: `${'g'.repeat(499)}${emoji}`,
+    })
+    await vi.waitFor(() => expect(bridge.show).toHaveBeenCalledOnce())
+    expect(shown().title).toBe('t'.repeat(499))
+    expect(shown().body).toBe('b'.repeat(3999))
+    expect(shown().tag).toBe('g'.repeat(499))
+    notify(`${'t'.repeat(498)}${emoji}`)
+    await vi.waitFor(() => expect(bridge.show).toHaveBeenCalledTimes(2))
+    expect(shown(1).title).toBe(`${'t'.repeat(498)}${emoji}`) // a whole pair at the end is kept
+  })
+
+  test('looks like the real thing to page code', () => {
+    expect(N().name).toBe('Notification')
+    const keys = Object.keys(window)
+    expect(keys).not.toContain('__diwanShimmed')
+    expect(keys).not.toContain('__diwanClick')
+    expect(w.__diwanShimmed).toBe(true)
+    expect(typeof w.__diwanClick).toBe('function')
   })
 
   test('installing twice keeps the first shim, so earlier notifications stay clickable', async () => {
@@ -172,6 +203,7 @@ describe('notification shim', () => {
     const shipped = new Function(`return (${installNotificationShim.toString()})`)() as () => void
     delete w.__diwanShimmed
     shipped()
+    expect(N().name).toBe('Notification')
     const n = notify('Ali', { body: 'hi' })
     const onclick = vi.fn()
     n.onclick = onclick
@@ -183,7 +215,7 @@ describe('notification shim', () => {
 
 describe('notification icon', () => {
   // jsdom has no createImageBitmap or OffscreenCanvas: stand in for the browser's decoder.
-  function stubImagePipeline(size: { width: number; height: number }, out = 'image/png') {
+  function stubImagePipeline(size: { width: number; height: number }, out = 'image/png', has2d = true) {
     const canvases: { w: number; h: number }[] = []
     const close = vi.fn()
     vi.stubGlobal(
@@ -201,7 +233,7 @@ describe('notification icon', () => {
           canvases.push({ w, h })
         }
         getContext() {
-          return { drawImage: () => {} }
+          return has2d ? { drawImage: () => {} } : null
         }
         async convertToBlob() {
           return new Blob(['png'], { type: out })
@@ -218,6 +250,14 @@ describe('notification icon', () => {
     expect(canvases).toEqual([{ w: 256, h: 128 }])
     expect(close).toHaveBeenCalledOnce()
     expect(shown().icon).toMatch(/^data:image\/png;base64,/)
+  })
+
+  test('no 2D context means no icon, never a blank PNG', async () => {
+    const { close } = stubImagePipeline({ width: 64, height: 64 }, 'image/png', false)
+    notify('Ali', { icon: 'blob:https://web.whatsapp.com/x' })
+    await vi.waitFor(() => expect(bridge.show).toHaveBeenCalledOnce())
+    expect(shown().icon).toBe('')
+    expect(close).toHaveBeenCalledOnce()
   })
 
   test('anything but a PNG is dropped, and the notification still goes out', async () => {
