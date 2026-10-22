@@ -92,3 +92,40 @@ test('log file is private (0600)', () => {
   log.info('x')
   expect(statSync(join(dir, 'main.log')).mode & 0o777).toBe(0o600)
 })
+
+test('errors carry up to 8 stack frames, each on its own line', () => {
+  const { log, read } = setup()
+  const e = new Error('z'.repeat(500))
+  e.stack = [
+    `Error: ${e.message}`,
+    ...Array.from({ length: 12 }, (_, i) => `    at fn${i} (/app/main.js:${i}:1)`),
+  ].join('\n')
+  log.error('bad', e)
+  const text = read()
+  expect(text).toContain('\n    at fn0 (/app/main.js:0:1)')
+  expect(text).toContain('\n    at fn7 (/app/main.js:7:1)')
+  expect(text).not.toContain('fn8')
+  expect(text).toContain('z'.repeat(200))
+  expect(text).not.toContain('z'.repeat(201))
+})
+
+test('a real error logs its own frames', () => {
+  const { log, read } = setup()
+  log.error('bad', new Error('short'))
+  expect(read()).toMatch(/Error: short\n {4}at .+log\.test\.ts:\d+:\d+/)
+})
+
+test('message lines that look like frames are never logged as frames', () => {
+  const { log, read } = setup()
+  log.error('bad', new Error('hello\n    at secret chat text'))
+  expect(read()).not.toContain('\n    at secret')
+})
+
+test('frames are capped at 200 characters and lose control characters', () => {
+  const { log, read } = setup()
+  const e = new Error('x')
+  e.stack = `Error: x\n    at ${'f'.repeat(400)}\u0007`
+  log.error('bad', e)
+  const frame = read().split('\n')[1]
+  expect(frame).toBe(`    at ${'f'.repeat(197)}`)
+})

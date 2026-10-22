@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { copyFileSync, linkSync, unlinkSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { Notification, type Session, session, shell } from 'electron'
-import type { Account } from '../shared/types'
 import { finalizeDownload, lstatExists, uniquePath } from './downloads'
 import { allowGuestPermission, chromeUserAgent, partitionOf, pickSpellLanguages } from './guest-config'
 import type { Logger } from './log'
@@ -101,7 +100,7 @@ export function setupGuestSession(accountId: string, d: { downloads: string; log
   return ses
 }
 
-export function accountForSession(ses: Session, accounts: Account[]): string | undefined {
+export function accountForSession(ses: Session, accounts: readonly { id: string }[]): string | undefined {
   const known = accountBySession.get(ses)
   if (known) return known
   return accounts.find((a) => session.fromPartition(partitionOf(a.id)) === ses)?.id

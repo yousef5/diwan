@@ -11,6 +11,7 @@ const KEEP = 3
 
 const MAX_MESSAGE = 200
 const MAX_EXTRA = 500
+const MAX_FRAMES = 8
 
 // Error messages (ZodError, JSON.parse...) can embed chat text, so they are never logged raw.
 function safeMessage(message: string): string {
@@ -18,6 +19,20 @@ function safeMessage(message: string): string {
   return Array.from(message.replace(/[\u0000-\u001f\u007f]/g, ' '))
     .slice(0, MAX_MESSAGE)
     .join('')
+}
+
+// Up to 8 "    at fn (file:line:col)" frames, each on its own line. Frames hold code locations, never
+// message text: the header (name + message, which may span lines) is cut off before looking.
+function stackFrames(e: Error): string {
+  if (typeof e.stack !== 'string') return ''
+  const head = e.message ? `${e.name}: ${e.message}` : e.name
+  const body = e.stack.startsWith(head) ? e.stack.slice(head.length) : e.stack
+  const frames = body
+    .split('\n')
+    .filter((l) => l.startsWith('    at '))
+    .slice(0, MAX_FRAMES)
+    .map((l) => `\n    ${safeMessage(l.slice(4))}`)
+  return frames.join('')
 }
 
 function isZodLike(x: unknown): x is { issues: { path: unknown[]; code: string }[] } {
@@ -33,7 +48,7 @@ function formatExtra(extra: unknown): string {
     }
     if (extra instanceof Error) {
       const cause = extra.cause instanceof Error ? ` (cause: ${extra.cause.name})` : ''
-      return ` ${extra.name}: ${safeMessage(extra.message)}${cause}`
+      return ` ${extra.name}: ${safeMessage(extra.message)}${cause}${stackFrames(extra)}`
     }
     return ` ${JSON.stringify(extra).slice(0, MAX_EXTRA)}`
   } catch {

@@ -1,11 +1,11 @@
 import { existsSync } from 'node:fs'
 import { lstat, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, Menu, screen, session } from 'electron'
+import { app, BrowserWindow, dialog, Menu, screen, session } from 'electron'
 import appIcon from '../../resources/icon.png?asset'
 import trayIcon from '../../resources/tray.png?asset'
 import { SHELL_COMMAND, STATE_CHANGED } from '../shared/ipc'
-import type { Account, ShellCommand } from '../shared/types'
+import type { ShellCommand } from '../shared/types'
 import { unreadTotal, windowTitle } from '../shared/unread'
 import { AvatarFiles } from './avatars'
 import { sweepStaleDownloadParts } from './downloads'
@@ -52,6 +52,8 @@ function start(): void {
   sweepStaleDownloadParts(paths.downloads) // synchronous; handles its own errors
   let win: BrowserWindow | null = null
   let quitting = false
+  // Saves the window geometry now; set by createWindow.
+  let persistGeometry: () => void = () => {}
 
   const sendShell = (cmd: ShellCommand) => win?.webContents.send(SHELL_COMMAND, cmd)
   const showWindow = () => {
@@ -166,6 +168,13 @@ function start(): void {
     avatars.remove(id)
     forgetAvatar(id) // reset the guest-avatar dedupe for this account
     for (let i = 0; i < 50 && registry.guestOf(id); i++) await new Promise((r) => setTimeout(r, 100))
+    // The shell never let go of the webview: close it ourselves before its storage is wiped.
+    const lingering = registry.guestOf(id)
+    if (lingering) {
+      log.warn('guest still attached after removal, closing it', { id })
+      lingering.close()
+      await new Promise((r) => setImmediate(r))
+    }
     const dir = join(paths.partitions, `acc-${id}`)
     // Never clear storage through a symlink: it could point into another app's live session.
     const isPlainDir = await lstat(dir).then(
@@ -208,7 +217,14 @@ function start(): void {
         spellcheck: false,
       },
     })
-    if (saved.maximized) w.maximize()
+    // maximize() maps the window, so a hidden start must wait for the first real show.
+    let pendingMax = saved.maximized
+    w.on('show', () => {
+      if (pendingMax) {
+        pendingMax = false
+        w.maximize()
+      }
+    })
 
     w.once('ready-to-show', () => {
       if (!hub.settings().startHidden || !hub.trayAvailable) w.show()
@@ -217,11 +233,19 @@ function start(): void {
     w.on('focus', () => w.flashFrame(false))
 
     let geometryTimer: ReturnType<typeof setTimeout> | undefined
+    const geometryNow = () => {
+      clearTimeout(geometryTimer)
+      if (w.isDestroyed()) return
+      try {
+        hub.persistWindow({ bounds: w.getNormalBounds(), maximized: w.isMaximized() || pendingMax })
+      } catch (e) {
+        log.warn('could not save the window geometry', e)
+      }
+    }
+    persistGeometry = geometryNow
     const saveGeometry = () => {
       clearTimeout(geometryTimer)
-      geometryTimer = setTimeout(() => {
-        if (!w.isDestroyed()) hub.persistWindow({ bounds: w.getNormalBounds(), maximized: w.isMaximized() })
-      }, 500)
+      geometryTimer = setTimeout(geometryNow, 500)
     }
     w.on('resize', saveGeometry)
     w.on('move', saveGeometry)
@@ -229,7 +253,9 @@ function start(): void {
       if (!quitting && hub.settings().closeToTray && hub.trayAvailable) {
         e.preventDefault()
         w.hide()
+        return
       }
+      geometryNow()
     })
     w.on('closed', () => {
       win = null
@@ -238,9 +264,20 @@ function start(): void {
     const shellWc = w.webContents
     shellWc.setWindowOpenHandler(() => ({ action: 'deny' }))
     shellWc.on('will-navigate', (e) => e.preventDefault())
-    shellWc.on('render-process-gone', (_e, details) =>
-      log.error('shell renderer gone', { reason: details.reason }),
-    )
+    // A crashed shell is a blank window: reload it, but at most 3 times a minute.
+    let shellCrashes: number[] = []
+    shellWc.on('render-process-gone', (_e, details) => {
+      log.error('shell renderer gone', { reason: details.reason })
+      if (details.reason === 'clean-exit' || w.isDestroyed()) return
+      const now = Date.now()
+      shellCrashes = shellCrashes.filter((t) => now - t <= 60_000)
+      if (shellCrashes.length >= 3) {
+        log.error('shell crashed 3 times in 60 s, not reloading it again')
+        return
+      }
+      shellCrashes.push(now)
+      shellWc.reload()
+    })
     shellWc.on('before-input-event', (event, input) => {
       const action = matchShortcut(input)
       if (!action) return
@@ -253,6 +290,14 @@ function start(): void {
         event.preventDefault()
         return
       }
+      // A well-formed partition is not enough: it must belong to an account that exists now,
+      // or a stray webview would recreate the folder of a removed account.
+      const accountId = params.partition.slice('persist:acc-'.length)
+      if (!hub.account(accountId)) {
+        log.warn('refused a webview for an unknown account')
+        event.preventDefault()
+        return
+      }
       applyGuestPreferences(
         prefs as unknown as Record<string, unknown>,
         join(__dirname, '../preload/guest.js'),
@@ -260,7 +305,7 @@ function start(): void {
       )
     })
     shellWc.on('did-attach-webview', (_e, guest) => {
-      const id = accountForSession(guest.session, hub.accounts() as Account[])
+      const id = accountForSession(guest.session, hub.accounts())
       if (!id || !hub.account(id)) {
         log.warn('webview for an unknown account')
         guest.close()
@@ -299,70 +344,79 @@ function start(): void {
   }
   app.on('before-quit', () => {
     quitting = true
+    persistGeometry()
     flushQuietly()
   })
   app.on('will-quit', flushQuietly) // app.exit() skips before-quit
   app.on('window-all-closed', () => app.quit())
 
-  app.whenReady().then(() => {
-    Menu.setApplicationMenu(null)
-    session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
-    for (const a of hub.accounts()) {
-      setupSession(a.id)
-      const avatar = avatars.load(a.id)
-      if (avatar) hub.setRuntime(a.id, { avatar })
-    }
-    hub.trayAvailable = tray.start()
-    hub.notify()
-    win = createWindow()
+  app
+    .whenReady()
+    .then(() => {
+      Menu.setApplicationMenu(null)
+      session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
+      for (const a of hub.accounts()) {
+        setupSession(a.id)
+        const avatar = avatars.load(a.id)
+        if (avatar) hub.setRuntime(a.id, { avatar })
+      }
+      hub.trayAvailable = tray.start()
+      hub.notify()
+      win = createWindow()
 
-    registerShellIpc({
-      hub,
-      registry,
-      avatars,
-      tray,
-      paths,
-      log,
-      win: () => win,
-      setupSession,
-      setZoom,
-      removeAccount,
-      forgetNotifications: (id) => notifier.forgetAccount(id),
-      sendShell,
-      planImport: () => {
-        const plan = planImport(
-          { nexusConfig: paths.nexusConfig, nexusPartitions },
-          fsPlanDeps,
-          importedSources(),
-        )
-        // Everything is already in (e.g. a crash just before markImported): stop offering the import.
-        if (plan.reason === 'Already imported' && hub.importAvailable) hub.markImported()
-        return { ...plan, nexusRunning: nexusRunning(paths.nexusUserData) }
-      },
-      applyImport: async () => {
-        if (nexusRunning(paths.nexusUserData)) throw new Error('Quit Nexus first, then import again.')
-        const plan = planImport(
-          { nexusConfig: paths.nexusConfig, nexusPartitions },
-          fsPlanDeps,
-          importedSources(),
-        )
-        return applyImport(plan, {
-          hub,
-          partitionsDir: paths.partitions,
-          setupSession,
-          log,
-          isNexusRunning: () => nexusRunning(paths.nexusUserData),
-        })
-      },
-    })
-    registerGuestIpc({ hub, registry, notifier, avatars, log })
+      registerShellIpc({
+        hub,
+        registry,
+        avatars,
+        tray,
+        paths,
+        log,
+        win: () => win,
+        setupSession,
+        setZoom,
+        removeAccount,
+        forgetNotifications: (id) => notifier.forgetAccount(id),
+        sendShell,
+        planImport: () => {
+          const plan = planImport(
+            { nexusConfig: paths.nexusConfig, nexusPartitions },
+            fsPlanDeps,
+            importedSources(),
+          )
+          // Everything is already in (e.g. a crash just before markImported): stop offering the import.
+          if (plan.reason === 'Already imported' && hub.importAvailable) hub.markImported()
+          return { ...plan, nexusRunning: nexusRunning(paths.nexusUserData) }
+        },
+        applyImport: async () => {
+          if (nexusRunning(paths.nexusUserData)) throw new Error('Quit Nexus first, then import again.')
+          const plan = planImport(
+            { nexusConfig: paths.nexusConfig, nexusPartitions },
+            fsPlanDeps,
+            importedSources(),
+          )
+          return applyImport(plan, {
+            hub,
+            partitionsDir: paths.partitions,
+            setupSession,
+            log,
+            isNexusRunning: () => nexusRunning(paths.nexusUserData),
+          })
+        },
+      })
+      registerGuestIpc({ hub, registry, notifier, avatars, log })
 
-    hub.on('changed', (s) => {
-      win?.webContents.send(STATE_CHANGED, s)
-      tray.update(s)
-      win?.setTitle(windowTitle(unreadTotal(s.accounts, s.runtime)))
+      hub.on('changed', (s) => {
+        win?.webContents.send(STATE_CHANGED, s)
+        tray.update(s)
+        win?.setTitle(windowTitle(unreadTotal(s.accounts, s.runtime)))
+      })
+      handleArgv(process.argv)
+      log.info('Diwan started', { version: app.getVersion(), accounts: hub.accounts().length })
     })
-    handleArgv(process.argv)
-    log.info('Diwan started', { version: app.getVersion(), accounts: hub.accounts().length })
-  })
+    // A half-started app with no window would keep the single-instance lock forever: fail visibly.
+    .catch((e) => {
+      log.error('startup failed', e)
+      dialog.showErrorBox('Diwan could not start', 'Details are in the log in Diwan’s data folder.')
+      app.exit(1)
+    })
 }
