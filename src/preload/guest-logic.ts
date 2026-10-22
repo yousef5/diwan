@@ -45,3 +45,19 @@ export function clickNid(msg: unknown): string | null {
   const nid = typeof msg === 'object' && msg !== null ? (msg as { nid?: unknown }).nid : undefined
   return typeof nid === 'string' && NID_PATTERN.test(nid) ? nid : null
 }
+
+// Token bucket: starts full with `capacity` tokens and refills `capacity` per `windowMs`, smoothly.
+// Each allowed call takes one token. Used in the guest preload, before ipcRenderer.send, so a
+// page looping on the notify bridge never turns into a flood of IPC messages to main.
+export function tokenBucket(capacity: number, windowMs: number, now: () => number = Date.now): () => boolean {
+  let tokens = capacity
+  let last = now()
+  return () => {
+    const t = now()
+    tokens = Math.min(capacity, tokens + (Math.max(0, t - last) * capacity) / windowMs)
+    last = t
+    if (tokens < 1) return false
+    tokens -= 1
+    return true
+  }
+}

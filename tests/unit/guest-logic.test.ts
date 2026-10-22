@@ -4,6 +4,7 @@ import {
   AVATAR_MAX_MS,
   avatarRetryDelay,
   clickNid,
+  tokenBucket,
   watchAvatar,
 } from '../../src/preload/guest-logic'
 
@@ -111,5 +112,52 @@ describe('clickNid', () => {
     { nid: '"); alert(1); ("' },
   ])('rejects %j', (msg) => {
     expect(clickNid(msg)).toBeNull()
+  })
+})
+
+describe('tokenBucket', () => {
+  afterEach(() => vi.useRealTimers())
+  const take = (allow: () => boolean, n: number) => Array.from({ length: n }, allow).filter(Boolean).length
+
+  test('a full bucket allows a burst of capacity, then drops', () => {
+    vi.useFakeTimers()
+    const allow = tokenBucket(60, 10_000)
+    expect(take(allow, 100_000)).toBe(60)
+  })
+
+  test('refills smoothly at capacity per window', () => {
+    vi.useFakeTimers()
+    const allow = tokenBucket(60, 10_000)
+    take(allow, 60)
+    vi.advanceTimersByTime(166) // 0.996 of a token
+    expect(allow()).toBe(false)
+    vi.advanceTimersByTime(1)
+    expect(allow()).toBe(true)
+    vi.advanceTimersByTime(5000)
+    expect(take(allow, 1000)).toBe(30)
+  })
+
+  test('never holds more than its capacity, however long it sat idle', () => {
+    vi.useFakeTimers()
+    const allow = tokenBucket(400, 10_000)
+    vi.advanceTimersByTime(3_600_000)
+    expect(take(allow, 10_000)).toBe(400)
+  })
+
+  test('a sustained loop gets exactly the refill rate', () => {
+    let t = 0
+    const allow = tokenBucket(60, 10_000, () => t)
+    let ok = 0
+    for (; t < 60_000; t += 1) ok += take(allow, 10)
+    expect(ok).toBeGreaterThanOrEqual(60 + 6 * 60 - 1)
+    expect(ok).toBeLessThanOrEqual(60 + 6 * 60)
+  })
+
+  test('a clock going backwards does not drain or overfill it', () => {
+    let t = 1_000_000
+    const allow = tokenBucket(5, 10_000, () => t)
+    expect(take(allow, 3)).toBe(3)
+    t -= 500_000
+    expect(take(allow, 10)).toBe(2)
   })
 })

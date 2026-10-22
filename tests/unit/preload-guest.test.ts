@@ -60,6 +60,22 @@ describe('guest preload', () => {
     expect(sent('guest:notify-close')).toEqual([{ nid: '' }, { nid: '' }, { nid: 'y'.repeat(64) }])
   })
 
+  test('a page looping on the bridge is cut off before any IPC, without throwing', () => {
+    vi.advanceTimersByTime(60_000) // a full bucket, whatever earlier tests took
+    expect(() => {
+      for (let i = 0; i < 100_000; i++) {
+        bridge.show({})
+        bridge.close('n')
+      }
+    }).not.toThrow()
+    expect(sent('guest:notify')).toHaveLength(60)
+    expect(sent('guest:notify-close')).toHaveLength(400)
+    electron.ipcRenderer.send.mockClear()
+    vi.advanceTimersByTime(10_000)
+    for (let i = 0; i < 1000; i++) bridge.show({})
+    expect(sent('guest:notify')).toHaveLength(60)
+  })
+
   test('a click from main replays the notification in the main world', () => {
     const onClick = electron.listeners.get(NOTIFY_CLICK)
     expect(onClick).toBeTypeOf('function')
