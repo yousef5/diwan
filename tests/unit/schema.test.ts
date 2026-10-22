@@ -116,4 +116,26 @@ describe('parseDiwanFile', () => {
     expect(Object.isFrozen(DEFAULT_SETTINGS.notifications)).toBe(true)
     expect(Object.isFrozen(DEFAULT_SETTINGS.window)).toBe(true)
   })
+  describe('repairs structural settings and the import flag', () => {
+    const parse = (extra: Record<string, unknown>) =>
+      parseDiwanFile({ schemaVersion: 1, accounts: [], ...extra })
+
+    test('settings not an object gives defaults', () => {
+      expect(parse({ settings: 'x' }).settings).toEqual(DEFAULT_SETTINGS)
+    })
+    test('notifications / window not objects give defaults', () => {
+      expect(parse({ settings: { notifications: 5 } }).settings.notifications).toEqual(
+        DEFAULT_SETTINGS.notifications,
+      )
+      expect(parse({ settings: { window: 'x' } }).settings.window).toEqual(DEFAULT_SETTINGS.window)
+    })
+    test('importedFromNexus', () => {
+      expect(parse({ importedFromNexus: 'yes' }).importedFromNexus).toBe(true)
+      expect(parse({}).importedFromNexus).toBe(false)
+    })
+    test('repaired name has no trailing space', () => {
+      const f = parse({ accounts: [{ id: id1, name: `${'x'.repeat(39)} yy`, color: '#3b82f6', order: 0 }] })
+      expect(f.accounts[0].name).toBe('x'.repeat(39))
+    })
+  })
 })

@@ -24,7 +24,7 @@ const FALLBACK_NAME = 'Account'
 const bool = (fallback: boolean) => z.boolean().catch(fallback)
 
 const StoredName = AccountName.catch((ctx) =>
-  typeof ctx.input === 'string' ? ctx.input.trim().slice(0, 40) || FALLBACK_NAME : FALLBACK_NAME,
+  typeof ctx.input === 'string' ? ctx.input.trim().slice(0, 40).trim() || FALLBACK_NAME : FALLBACK_NAME,
 )
 const StoredZoom = z
   .number()
@@ -71,15 +71,15 @@ const SettingsSchema = z.object({
   closeToTray: bool(true),
   startHidden: bool(false),
   showWindowControls: bool(false),
-  notifications: NotificationsSchema.default(() => clone(DEFAULT_SETTINGS.notifications)),
-  window: WindowSchema.default(() => clone(DEFAULT_SETTINGS.window)),
+  notifications: NotificationsSchema.catch(() => clone(DEFAULT_SETTINGS.notifications)),
+  window: WindowSchema.catch(() => clone(DEFAULT_SETTINGS.window)),
 })
 
 const DiwanFileSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
-  importedFromNexus: z.boolean().default(false),
+  importedFromNexus: z.boolean().default(false).catch(true),
   accounts: z.array(AccountSchema),
-  settings: SettingsSchema.default(() => clone(DEFAULT_SETTINGS)),
+  settings: SettingsSchema.catch(() => clone(DEFAULT_SETTINGS)),
 })
 
 // Validates, fills defaults, drops unknown keys and duplicate ids, sorts by order, re-indexes.
