@@ -33,11 +33,11 @@ describe('buildMenu', () => {
       { dev: false },
     )
     expect(ids(m)).toEqual([
-      'spell:hello',
-      'spell:help',
-      'spell:hero',
-      'spell:halo',
-      'spell:helot',
+      'spell:0',
+      'spell:1',
+      'spell:2',
+      'spell:3',
+      'spell:4',
       'addWord',
       '—',
       'role:cut',
@@ -82,5 +82,79 @@ describe('buildMenu', () => {
       '—',
       'inspect',
     ])
+  })
+
+  test('suggestion ids are index-based, never the word', () => {
+    const m = buildMenu(p({ misspelledWord: 'x', dictionarySuggestions: ['a:b'] }), { dev: false })
+    expect(ids(m)[0]).toBe('spell:0')
+  })
+
+  test('empty suggestions are dropped but keep the original index', () => {
+    const m = buildMenu(p({ misspelledWord: 'x', dictionarySuggestions: ['', 'x'] }), { dev: false })
+    expect(ids(m)).toEqual(['spell:1', 'addWord'])
+  })
+
+  test('link and image: link group, separator, image group', () => {
+    const m = buildMenu(p({ linkURL: 'https://x.com', mediaType: 'image', srcURL: 'https://x.com/a.png' }), {
+      dev: false,
+    })
+    expect(ids(m)).toEqual(['openLink', 'copyLink', '—', 'copyImage', 'saveImage'])
+  })
+
+  test('link inside an editable field: link items then edit roles', () => {
+    const m = buildMenu(p({ linkURL: 'https://x.com', isEditable: true }), { dev: false })
+    expect(ids(m)).toEqual([
+      'openLink',
+      'copyLink',
+      '—',
+      'role:cut',
+      'role:copy',
+      'role:paste',
+      'role:pasteAndMatchStyle',
+      'role:selectAll',
+    ])
+  })
+
+  test('whitespace-only selection → empty', () => {
+    expect(buildMenu(p({ selectionText: ' \n\t ' }), { dev: false })).toEqual([])
+  })
+
+  test('truncation never splits a surrogate pair', () => {
+    const m = buildMenu(p({ selectionText: `${'a'.repeat(23)}😀bbb` }), { dev: false })
+    const search = m[1]
+    const label = search.type === 'item' ? search.label : ''
+    expect(label).toContain('😀…')
+    expect(label).not.toMatch(/[\ud800-\udbff](?![\udc00-\udfff])|(?<![\ud800-\udbff])[\udc00-\udfff]/)
+  })
+
+  test('control and bidi-format characters are stripped from labels', () => {
+    const m = buildMenu(p({ selectionText: 'a\nb\u202ec' }), { dev: false })
+    const search = m[1]
+    const label = search.type === 'item' ? search.label : ''
+    expect(label).not.toContain('\n')
+    expect(label).not.toContain('\u202e')
+    expect(label).toBe('Search the web for “a b c”')
+  })
+
+  test('ampersands are escaped for Electron mnemonics', () => {
+    const m = buildMenu(p({ selectionText: 'R&D' }), { dev: false })
+    const search = m[1]
+    expect(search.type === 'item' && search.label).toContain('R&&D')
+  })
+
+  test('dev with nothing else → empty', () => {
+    expect(buildMenu(p(), { dev: true })).toEqual([])
+  })
+
+  test('saveImage only for http(s), data:image and blob sources', () => {
+    for (const srcURL of ['file:///x.png', 'javascript:x']) {
+      expect(ids(buildMenu(p({ mediaType: 'image', srcURL }), { dev: false }))).toEqual(['copyImage'])
+    }
+    for (const srcURL of ['http://a/b.png', 'https://a/b.png', 'data:image/png;base64,AA', 'blob:x']) {
+      expect(ids(buildMenu(p({ mediaType: 'image', srcURL }), { dev: false }))).toEqual([
+        'copyImage',
+        'saveImage',
+      ])
+    }
   })
 })
