@@ -5,6 +5,7 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -20,6 +21,7 @@
     "src/preload/**/*",
     "src/shared/**/*",
     "tests/**/*",
+    "src/renderer/env.d.ts",
     "electron.vite.config.ts",
     "vitest.config.ts",
     "playwright.config.ts"
