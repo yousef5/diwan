@@ -18,6 +18,7 @@ import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
 import { createLogger } from './log'
 import { Notifier } from './notifier'
+import { orphanSweepAllowed, sweepOrphanPartitions } from './orphan-partitions'
 import { resolvePaths } from './paths'
 import { Registry } from './registry'
 import { accountForSession, setupGuestSession } from './sessions'
@@ -50,6 +51,19 @@ function start(): void {
   // A crash during an import leaves acc-<id>.partial folders that no account uses.
   void sweepPartials(paths.partitions).catch((e) => log.warn('could not sweep partial imports', e))
   sweepStaleDownloadParts(paths.downloads) // synchronous; handles its own errors
+  // A removed account's folder can come back as an empty shell (Electron keeps its session in memory
+  // until quit). Swept only when the account list is trustworthy, and before any guest session exists.
+  const orphanSweep = orphanSweepAllowed(store)
+    ? sweepOrphanPartitions(
+        paths.partitions,
+        hub.accounts().map((a) => a.id),
+      ).then(
+        (removed) => {
+          if (removed.length) log.info('removed leftover account folders', { count: removed.length })
+        },
+        (e) => log.warn('could not sweep leftover account folders', e),
+      )
+    : Promise.resolve()
   let win: BrowserWindow | null = null
   let quitting = false
   // Saves the window geometry now; set by createWindow.
@@ -347,12 +361,14 @@ function start(): void {
     persistGeometry()
     flushQuietly()
   })
-  app.on('will-quit', flushQuietly) // app.exit() skips before-quit
+  // A second chance if before-quit's flush threw. app.exit() skips both events, so flush before calling it.
+  app.on('will-quit', flushQuietly)
   app.on('window-all-closed', () => app.quit())
 
   app
     .whenReady()
-    .then(() => {
+    .then(async () => {
+      await orphanSweep
       Menu.setApplicationMenu(null)
       session.defaultSession.setPermissionRequestHandler((_wc, _permission, callback) => callback(false))
       for (const a of hub.accounts()) {
@@ -416,6 +432,7 @@ function start(): void {
     // A half-started app with no window would keep the single-instance lock forever: fail visibly.
     .catch((e) => {
       log.error('startup failed', e)
+      flushQuietly() // app.exit() fires neither before-quit nor will-quit; the dialog below may be killed
       dialog.showErrorBox('Diwan could not start', 'Details are in the log in Diwan’s data folder.')
       app.exit(1)
     })

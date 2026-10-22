@@ -129,3 +129,14 @@ test('frames are capped at 200 characters and lose control characters', () => {
   const frame = read().split('\n')[1]
   expect(frame).toBe(`    at ${'f'.repeat(197)}`)
 })
+
+test('a stack whose header does not match name and message logs no frames at all', () => {
+  const { log, read } = setup()
+  const e = new Error('hello\n    at secret chat text')
+  // e.g. a stack rewritten by a library: the message can't be cut off safely, so nothing is scanned
+  e.stack = 'Wrapped: hello\n    at secret chat text\n    at fn (/app/main.js:1:1)'
+  log.error('bad', e)
+  const text = read()
+  expect(text).not.toContain('\n    at secret')
+  expect(text.trimEnd().split('\n')).toHaveLength(1) // the (flattened) message, and no frames
+})

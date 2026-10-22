@@ -22,12 +22,15 @@ function safeMessage(message: string): string {
 }
 
 // Up to 8 "    at fn (file:line:col)" frames, each on its own line. Frames hold code locations, never
-// message text: the header (name + message, which may span lines) is cut off before looking.
+// message text: the header (name + message, which may span lines) is cut off before looking. A stack
+// whose header isn't exactly `name: message` gives no frames, since a message line starting with
+// "    at " could not be told apart from a real frame.
 function stackFrames(e: Error): string {
   if (typeof e.stack !== 'string') return ''
   const head = e.message ? `${e.name}: ${e.message}` : e.name
-  const body = e.stack.startsWith(head) ? e.stack.slice(head.length) : e.stack
-  const frames = body
+  if (!e.stack.startsWith(head)) return ''
+  const frames = e.stack
+    .slice(head.length)
     .split('\n')
     .filter((l) => l.startsWith('    at '))
     .slice(0, MAX_FRAMES)
