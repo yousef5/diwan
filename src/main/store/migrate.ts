@@ -14,7 +14,12 @@ export function migrate(
 ): unknown {
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return raw
   let obj: Record<string, unknown> = { ...(raw as Record<string, unknown>) }
-  let version = typeof obj.schemaVersion === 'number' ? obj.schemaVersion : 1
+  let version = 1
+  if ('schemaVersion' in obj) {
+    const v = obj.schemaVersion
+    if (typeof v !== 'number' || !Number.isSafeInteger(v) || v < 1) throw new Error('bad schemaVersion')
+    version = v
+  }
   if (version > target)
     throw new NewerSchemaError(`settings file is schema ${version}, this Diwan understands ${target}`)
   while (version < target) {

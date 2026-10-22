@@ -3,35 +3,56 @@ import type { DiwanFile, Settings } from '../../shared/types'
 
 export const SCHEMA_VERSION = 1
 
-export const DEFAULT_SETTINGS: Settings = {
+export const DEFAULT_SETTINGS: Settings = Object.freeze({
   closeToTray: true,
   startHidden: false,
   showWindowControls: false,
-  notifications: { enabled: true, sound: true, showPreview: true, markUrgent: false },
-  window: { bounds: null, maximized: false },
-}
+  notifications: Object.freeze({ enabled: true, sound: true, showPreview: true, markUrgent: false }),
+  window: Object.freeze({ bounds: null, maximized: false }),
+})
 
 const clone = <T>(v: T): T => structuredClone(v)
 
+// Strict validators, also used for IPC input.
 export const HexColor = z.string().regex(/^#[0-9a-fA-F]{6}$/)
 export const AccountName = z.string().trim().min(1).max(40)
 
+// Stored-file schema: cosmetic fields are repaired instead of rejecting the whole file.
+// Only the id (partition identity), the accounts array and schemaVersion stay strict.
+const FALLBACK_COLOR = '#71717a'
+const FALLBACK_NAME = 'Account'
+const bool = (fallback: boolean) => z.boolean().catch(fallback)
+
+const StoredName = AccountName.catch((ctx) =>
+  typeof ctx.input === 'string' ? ctx.input.trim().slice(0, 40) || FALLBACK_NAME : FALLBACK_NAME,
+)
+const StoredZoom = z
+  .number()
+  .int()
+  .min(-5)
+  .max(5)
+  .catch((ctx) =>
+    typeof ctx.input === 'number' && Number.isFinite(ctx.input)
+      ? Math.max(-5, Math.min(5, Math.round(ctx.input)))
+      : 0,
+  )
+
 const AccountSchema = z.object({
-  id: z.string().regex(/^[0-9a-f-]{36}$/),
-  name: AccountName,
-  color: HexColor,
-  order: z.number().int().min(0),
-  zoom: z.number().int().min(-5).max(5).default(0),
-  muted: z.boolean().default(false),
-  customAvatar: z.boolean().default(false),
-  createdAt: z.string().default(() => new Date().toISOString()),
+  id: z.string().regex(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/),
+  name: StoredName,
+  color: HexColor.catch(FALLBACK_COLOR),
+  order: z.number().finite().catch(0),
+  zoom: StoredZoom,
+  muted: bool(false),
+  customAvatar: bool(false),
+  createdAt: z.string().catch(() => new Date().toISOString()),
 })
 
 const NotificationsSchema = z.object({
-  enabled: z.boolean().default(true),
-  sound: z.boolean().default(true),
-  showPreview: z.boolean().default(true),
-  markUrgent: z.boolean().default(false),
+  enabled: bool(true),
+  sound: bool(true),
+  showPreview: bool(true),
+  markUrgent: bool(false),
 })
 
 const RectSchema = z.object({
@@ -42,14 +63,14 @@ const RectSchema = z.object({
 })
 
 const WindowSchema = z.object({
-  bounds: RectSchema.nullable().default(null),
-  maximized: z.boolean().default(false),
+  bounds: RectSchema.nullable().catch(null),
+  maximized: bool(false),
 })
 
 const SettingsSchema = z.object({
-  closeToTray: z.boolean().default(true),
-  startHidden: z.boolean().default(false),
-  showWindowControls: z.boolean().default(false),
+  closeToTray: bool(true),
+  startHidden: bool(false),
+  showWindowControls: bool(false),
   notifications: NotificationsSchema.default(() => clone(DEFAULT_SETTINGS.notifications)),
   window: WindowSchema.default(() => clone(DEFAULT_SETTINGS.window)),
 })
@@ -57,7 +78,7 @@ const SettingsSchema = z.object({
 const DiwanFileSchema = z.object({
   schemaVersion: z.literal(SCHEMA_VERSION),
   importedFromNexus: z.boolean().default(false),
-  accounts: z.array(AccountSchema).default(() => []),
+  accounts: z.array(AccountSchema),
   settings: SettingsSchema.default(() => clone(DEFAULT_SETTINGS)),
 })
 
@@ -73,5 +94,5 @@ export function parseDiwanFile(raw: unknown): DiwanFile {
 }
 
 export function defaultFile(): DiwanFile {
-  return parseDiwanFile({ schemaVersion: SCHEMA_VERSION })
+  return parseDiwanFile({ schemaVersion: SCHEMA_VERSION, accounts: [] })
 }

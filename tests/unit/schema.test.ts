@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'vitest'
+import { migrate } from '../../src/main/store/migrate'
 import { DEFAULT_SETTINGS, defaultFile, parseDiwanFile, SCHEMA_VERSION } from '../../src/main/store/schema'
 
 const id1 = '649d14d5-ebb9-4ed6-9725-633b89c6ceac'
@@ -18,6 +19,7 @@ describe('parseDiwanFile', () => {
   test('fills missing nested settings and drops unknown keys', () => {
     const f = parseDiwanFile({
       schemaVersion: 1,
+      accounts: [],
       junk: 1,
       settings: { closeToTray: false, notifications: { sound: false } },
     })
@@ -59,5 +61,59 @@ describe('parseDiwanFile', () => {
     const a = defaultFile()
     a.settings.notifications.enabled = false
     expect(defaultFile().settings.notifications.enabled).toBe(true)
+  })
+  test('accounts is required', () => {
+    expect(() => parseDiwanFile(migrate({}))).toThrow()
+    expect(() => parseDiwanFile({ schemaVersion: 1, settings: {} })).toThrow()
+  })
+
+  describe('repairs cosmetic fields in the stored file', () => {
+    const acc = (over: Record<string, unknown>) =>
+      parseDiwanFile({
+        schemaVersion: 1,
+        accounts: [{ id: id1, name: 'A', color: '#3b82f6', order: 0, ...over }],
+      }).accounts[0]
+
+    test('bad color', () => expect(acc({ color: 'red' }).color).toBe('#71717a'))
+    test('long name truncated', () => expect(acc({ name: 'x'.repeat(41) }).name).toBe('x'.repeat(40)))
+    test('bad name', () => {
+      expect(acc({ name: '   ' }).name).toBe('Account')
+      expect(acc({ name: 5 }).name).toBe('Account')
+    })
+    test('zoom clamped and rounded', () => {
+      expect(acc({ zoom: 6 }).zoom).toBe(5)
+      expect(acc({ zoom: 0.4 }).zoom).toBe(0)
+      expect(acc({ zoom: 'x' }).zoom).toBe(0)
+    })
+    test('null flags', () => {
+      expect(acc({ muted: null }).muted).toBe(false)
+      expect(acc({ customAvatar: 1 }).customAvatar).toBe(false)
+    })
+    test('bad createdAt and order', () => {
+      expect(Number.isNaN(Date.parse(acc({ createdAt: 5 }).createdAt))).toBe(false)
+      expect(acc({ order: 'x' }).order).toBe(0)
+    })
+    test('settings repairs', () => {
+      const f = parseDiwanFile({
+        schemaVersion: 1,
+        accounts: [],
+        settings: {
+          closeToTray: 'yes',
+          notifications: { sound: 3 },
+          window: { bounds: { x: 0, y: 0, width: 0, height: 500 }, maximized: 'no' },
+        },
+      })
+      expect(f.settings).toEqual(DEFAULT_SETTINGS)
+    })
+    test('invalid id still throws', () => {
+      expect(() => acc({ id: 'X'.repeat(36) })).toThrow()
+      expect(() => acc({ id: '-'.repeat(36) })).toThrow()
+    })
+  })
+
+  test('DEFAULT_SETTINGS is frozen deeply', () => {
+    expect(Object.isFrozen(DEFAULT_SETTINGS)).toBe(true)
+    expect(Object.isFrozen(DEFAULT_SETTINGS.notifications)).toBe(true)
+    expect(Object.isFrozen(DEFAULT_SETTINGS.window)).toBe(true)
   })
 })
