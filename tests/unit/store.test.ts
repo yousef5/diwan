@@ -335,4 +335,167 @@ describe('Store', () => {
     })
     expect(statSync(join(dir, 'diwan.json')).mode & 0o777).toBe(0o600)
   })
+
+  test('a failed flush() is retried by the timer', () => {
+    vi.useFakeTimers()
+    try {
+      const fail = { on: true }
+      const errors: unknown[] = []
+      const s = new Store(dir, 10_000, (e) => errors.push(e), {
+        writeFileSync: ((f: string, d: string, o: never) => {
+          if (fail.on) throw new Error('ENOSPC')
+          writeFileSync(f, d, o)
+        }) as never,
+      })
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      expect(() => s.flush()).toThrow('ENOSPC')
+      fail.on = false
+      vi.advanceTimersByTime(1000)
+      expect(read('diwan.json').importedFromNexus).toBe(true)
+      expect(errors).toHaveLength(1)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('backoff caps at 30s and resets after a success', () => {
+    vi.useFakeTimers()
+    try {
+      const fail = { on: true }
+      let attempts = 0
+      const s = new Store(dir, 10, undefined, {
+        writeFileSync: ((f: string, d: string, o: never) => {
+          attempts++
+          if (fail.on) throw new Error('ENOSPC')
+          writeFileSync(f, d, o)
+        }) as never,
+      })
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      vi.advanceTimersByTime(10) // attempt 1
+      // delays: 1s 2s 4s 8s 16s 30s 30s ...
+      vi.advanceTimersByTime(1000 + 2000 + 4000 + 8000 + 16000)
+      expect(attempts).toBe(6)
+      vi.advanceTimersByTime(29_999)
+      expect(attempts).toBe(6)
+      vi.advanceTimersByTime(1)
+      expect(attempts).toBe(7)
+      vi.advanceTimersByTime(30_000)
+      expect(attempts).toBe(8)
+      fail.on = false
+      vi.advanceTimersByTime(30_000)
+      expect(read('diwan.json').importedFromNexus).toBe(true)
+      fail.on = true
+      s.update((f) => {
+        f.settings.closeToTray = false
+      })
+      vi.advanceTimersByTime(10)
+      const n = attempts
+      vi.advanceTimersByTime(1000)
+      expect(attempts).toBe(n + 1) // back to a 1s backoff
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  test('an unreadable main + good .bak → recovery, nothing renamed', () => {
+    if (process.getuid?.() === 0) return
+    const s = new Store(dir, 0)
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    s.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    chmodSync(join(dir, 'diwan.json'), 0o000)
+    try {
+      const s2 = new Store(dir, 0)
+      expect(s2.recovery).toBe(true)
+      expect(readdirSync(dir).filter((n) => n.includes('broken'))).toEqual([])
+    } finally {
+      chmodSync(join(dir, 'diwan.json'), 0o600)
+    }
+  })
+
+  test('failing to move a damaged main aside at load → recovery', () => {
+    const s = new Store(dir, 0)
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    s.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    writeFileSync(join(dir, 'diwan.json'), '{ half')
+    const s2 = new Store(dir, 0, undefined, {
+      renameSync: (() => {
+        throw Object.assign(new Error('nope'), { code: 'EACCES' })
+      }) as never,
+    })
+    expect(s2.recovery).toBe(true)
+    expect(readFileSync(join(dir, 'diwan.json'), 'utf8')).toBe('{ half')
+  })
+
+  test('hard link unsupported → rotates by copy, .bak holds the previous main', () => {
+    const s = new Store(dir, 0, undefined, {
+      linkSync: (() => {
+        throw Object.assign(new Error('x'), { code: 'EPERM' })
+      }) as never,
+    })
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    const previous = readFileSync(join(dir, 'diwan.json'), 'utf8')
+    s.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    expect(readFileSync(join(dir, 'diwan.json.bak'), 'utf8')).toBe(previous)
+    expect(read('diwan.json').accounts[0].name).toBe('Two')
+  })
+
+  test('after a normal rotation .bak equals the previous main', () => {
+    const s = new Store(dir, 0)
+    s.update((f) => {
+      f.accounts.push(account)
+    })
+    const previous = readFileSync(join(dir, 'diwan.json'), 'utf8')
+    s.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    expect(readFileSync(join(dir, 'diwan.json.bak'), 'utf8')).toBe(previous)
+  })
+
+  test.each(['linkSync', 'final rename'])('failure at %s: reload with real fs is safe', (where) => {
+    const s0 = new Store(dir, 0)
+    s0.update((f) => {
+      f.accounts.push(account)
+    })
+    s0.update((f) => {
+      f.accounts[0].name = 'Two'
+    })
+    const boom = () => {
+      throw Object.assign(new Error('boom'), { code: 'EIO' })
+    }
+    const overrides =
+      where === 'linkSync'
+        ? { linkSync: boom as never }
+        : {
+            renameSync: ((a: string, b: string) => {
+              if (b === join(dir, 'diwan.json')) boom()
+              renameSync(a, b)
+            }) as never,
+          }
+    const s = new Store(dir, 0, undefined, overrides)
+    expect(() =>
+      s.update((f) => {
+        f.accounts[0].name = 'Three'
+      }),
+    ).toThrow()
+    const s2 = new Store(dir, 0)
+    expect(s2.recovery).toBe(false)
+    expect(['Two', 'Three']).toContain(s2.get().accounts[0].name)
+    expect(() => read('diwan.json.bak')).not.toThrow()
+  })
 })

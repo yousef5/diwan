@@ -35,10 +35,15 @@ function deepFreeze<T>(v: T): T {
 
 const stamp = () => `${Date.now()}-${process.pid}-${Math.random().toString(36).slice(2, 6)}`
 const MAX_BACKOFF_MS = 30_000
+const backoff = (failures: number) => Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (failures - 1))
+const LINK_FALLBACK_CODES = new Set(['EPERM', 'ENOTSUP', 'EXDEV', 'EMLINK'])
+
+type Probe = { kind: 'absent' | 'io' | 'newer' | 'bad' } | { kind: 'good'; file: DiwanFile }
 
 export type LoadSource = 'file' | 'backup' | 'default'
 
-// One writer, in main. Saves go: write .tmp → fsync → copy the current good file to .bak → rename.
+// One writer, in main. Saves go: write .tmp (fsync) → verify read-back → rotate the current good main into .bak (hard link,
+// copy as fallback) → rename .tmp into place → fsync the directory.
 // A damaged file is never overwritten: if neither diwan.json nor .bak parses, the store is
 // read-only (recovery mode) until the user picks "Start fresh".
 export class Store {
@@ -90,7 +95,16 @@ export class Store {
   // Writes any pending change now. May throw; the change stays pending so the next call retries.
   flush(): void {
     this.clearTimer()
-    if (this.dirty) this.writeNow()
+    if (!this.dirty) return
+    try {
+      this.writeNow()
+      this.failures = 0
+    } catch (e) {
+      this.failures++
+      this.arm(backoff(this.failures))
+      this.report(e)
+      throw e
+    }
   }
 
   startFresh(): void {
@@ -107,53 +121,59 @@ export class Store {
     this.writeNow()
   }
 
+  private probe(p: string): Probe {
+    let text: string
+    try {
+      text = this.fs.readFileSync(p, 'utf8')
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code
+      if (code === 'ENOENT') return { kind: 'absent' }
+      return { kind: 'io' }
+    }
+    try {
+      return { kind: 'good', file: parseDiwanFile(migrate(JSON.parse(text))) }
+    } catch (e) {
+      return { kind: e instanceof NewerSchemaError ? 'newer' : 'bad' }
+    }
+  }
+
   private load(): DiwanFile {
-    // A file written by a newer Diwan is never read through a backup or overwritten (no downgrade).
-    if (this.isNewer(this.path) || this.isNewer(this.backupPath)) {
+    const main = this.probe(this.path)
+    const bak = this.probe(this.backupPath)
+    const recover = (): DiwanFile => {
       this._recovery = true
       this._source = 'default'
       return defaultFile()
     }
-    const mainExists = this.fs.existsSync(this.path)
-    const main = mainExists ? this.readParsed(this.path) : undefined
-    if (main) {
+    // An unreadable or newer-schema file (no downgrade) always means recovery; nothing is moved.
+    if (main.kind === 'io' || bak.kind === 'io' || main.kind === 'newer' || bak.kind === 'newer')
+      return recover()
+    if (main.kind === 'good') {
       this._source = 'file'
       this.mainGood = true
-      return main
+      return main.file
     }
-    const backup = this.fs.existsSync(this.backupPath) ? this.readParsed(this.backupPath) : undefined
-    if (backup) {
-      this._source = 'backup'
-      // Keep the damaged main for forensics; never let a save overwrite it.
-      if (mainExists) {
+    if (bak.kind === 'good') {
+      if (main.kind === 'bad') {
+        // Keep the damaged main for forensics; if that fails, a later save would overwrite it.
         try {
           this.fs.renameSync(this.path, `${this.path}.broken-${stamp()}`)
-        } catch {}
+        } catch {
+          return recover()
+        }
       }
-      return backup
+      this._source = 'backup'
+      return bak.file
     }
     this._source = 'default'
-    if (main === null || backup === null) this._recovery = true
+    if (main.kind === 'bad' || bak.kind === 'bad') this._recovery = true
     return defaultFile()
   }
 
-  private isNewer(p: string): boolean {
-    if (!this.fs.existsSync(p)) return false
+  private report(e: unknown): void {
     try {
-      migrate(JSON.parse(this.fs.readFileSync(p, 'utf8')))
-      return false
-    } catch (e) {
-      return e instanceof NewerSchemaError
-    }
-  }
-
-  // undefined = absent (handled by caller), null = present but unusable
-  private readParsed(p: string): DiwanFile | null {
-    try {
-      return parseDiwanFile(migrate(JSON.parse(this.fs.readFileSync(p, 'utf8'))))
-    } catch {
-      return null
-    }
+      this.onError?.(e)
+    } catch {}
   }
 
   private clearTimer(): void {
@@ -177,10 +197,8 @@ export class Store {
         this.writeNow()
       } catch (e) {
         this.failures++
-        try {
-          this.onError?.(e)
-        } catch {}
-        this.arm(Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (this.failures - 1)))
+        this.report(e)
+        this.arm(backoff(this.failures))
       }
     }, delay)
   }
@@ -192,19 +210,33 @@ export class Store {
     const tmp = `${this.path}.tmp`
     this.fs.rmSync(tmp, { force: true })
     this.fs.writeFileSync(tmp, text, { mode: 0o600, flush: true })
-    parseDiwanFile(migrate(JSON.parse(this.fs.readFileSync(tmp, 'utf8'))))
-    if (this.mainGood && this.fs.existsSync(this.path)) {
-      // Rotate the current good main into .bak atomically, by hard link (no copy, never half-written).
-      const bakTmp = `${this.backupPath}.tmp`
-      this.fs.rmSync(bakTmp, { force: true })
-      this.fs.linkSync(this.path, bakTmp)
-      this.fs.renameSync(bakTmp, this.backupPath)
-    }
+    if (this.fs.readFileSync(tmp, 'utf8') !== text) throw new Error('read-back mismatch, not saving')
+    if (this.mainGood) this.rotateBackup()
     this.fs.renameSync(tmp, this.path)
     this.fsyncDir()
     this.mainGood = true
     this.dirty = false
     this.failures = 0
+  }
+
+  // Rotate the current main into .bak, only if main still parses (else keep the old .bak).
+  private rotateBackup(): void {
+    let current: string
+    try {
+      current = this.fs.readFileSync(this.path, 'utf8')
+      parseDiwanFile(migrate(JSON.parse(current)))
+    } catch {
+      return
+    }
+    const bakTmp = `${this.backupPath}.tmp`
+    this.fs.rmSync(bakTmp, { force: true })
+    try {
+      this.fs.linkSync(this.path, bakTmp)
+    } catch (e) {
+      if (!LINK_FALLBACK_CODES.has((e as NodeJS.ErrnoException).code ?? '')) throw e
+      this.fs.writeFileSync(bakTmp, current, { mode: 0o600, flush: true })
+    }
+    this.fs.renameSync(bakTmp, this.backupPath)
   }
 
   private fsyncDir(): void {
