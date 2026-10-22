@@ -47,4 +47,23 @@ describe('matchShortcut', () => {
     expect(matchShortcut(key('KeyM', { shift: true }))).toBeNull()
     expect(matchShortcut(key('Digit1', { shift: true }))).toBeNull()
   })
+  test('held one-shot keys are swallowed, held repeatable keys repeat', () => {
+    expect(matchShortcut(key('KeyR', { isAutoRepeat: true }))).toEqual({ type: 'ignore' })
+    expect(matchShortcut(key('Comma', { isAutoRepeat: true }))).toEqual({ type: 'ignore' })
+    expect(matchShortcut(key('F5', { control: false, isAutoRepeat: true }))).toEqual({
+      type: 'ignore',
+    })
+    expect(matchShortcut(key('Tab', { isAutoRepeat: true }))).toEqual({ type: 'next' })
+    expect(matchShortcut(key('Equal', { isAutoRepeat: true }))).toEqual({ type: 'zoom', delta: 1 })
+  })
+  test('F5 variants', () => {
+    expect(matchShortcut(key('F5'))).toEqual({ type: 'reload' })
+    expect(matchShortcut(key('F5', { shift: true }))).toEqual({ type: 'remount' })
+  })
+  test('Ctrl+Shift+Minus zooms out', () => {
+    expect(matchShortcut(key('Minus', { shift: true }))).toEqual({ type: 'zoom', delta: -1 })
+  })
+  test('Meta alone is not the modifier on Linux', () => {
+    expect(matchShortcut(key('Digit1', { control: false, meta: true }))).toBeNull()
+  })
 })

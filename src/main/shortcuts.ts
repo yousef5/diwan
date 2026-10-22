@@ -1,12 +1,13 @@
 // Matches on `code` (physical key), not `key`, so shortcuts work with the Arabic layout active.
 export interface KeyInput {
-  type: string
+  type: 'keyDown' | 'keyUp'
   code: string
   key: string
   control: boolean
   meta: boolean
   shift: boolean
   alt: boolean
+  isAutoRepeat?: boolean
 }
 
 export type ShortcutAction =
@@ -19,11 +20,23 @@ export type ShortcutAction =
   | { type: 'settings' }
   | { type: 'hide' }
   | { type: 'quit' }
+  // a held one-shot key: swallow it so WhatsApp doesn't see it, but do nothing
+  | { type: 'ignore' }
+
+const ONE_SHOT = new Set<ShortcutAction['type']>(['reload', 'remount', 'settings', 'hide', 'quit'])
 
 export function matchShortcut(i: KeyInput): ShortcutAction | null {
+  const action = match(i)
+  if (action && i.isAutoRepeat && ONE_SHOT.has(action.type)) return { type: 'ignore' }
+  return action
+}
+
+function match(i: KeyInput): ShortcutAction | null {
   if (i.type !== 'keyDown' || i.alt) return null
-  if (i.code === 'F5' && !i.control && !i.meta) return { type: 'reload' }
-  if (!i.control && !i.meta) return null
+  if (i.code === 'F5') return i.shift ? { type: 'remount' } : { type: 'reload' }
+  // Ctrl on Linux/Windows, Cmd only on macOS
+  const mod = process.platform === 'darwin' ? i.meta : i.control
+  if (!mod) return null
 
   const digit = /^(?:Digit|Numpad)([1-9])$/.exec(i.code)
   if (digit) return i.shift ? null : { type: 'account', index: Number(digit[1]) - 1 }
@@ -42,7 +55,7 @@ export function matchShortcut(i: KeyInput): ShortcutAction | null {
       return { type: 'zoom', delta: 1 }
     case 'Minus':
     case 'NumpadSubtract':
-      return i.shift ? null : { type: 'zoom', delta: -1 }
+      return { type: 'zoom', delta: -1 }
     case 'Digit0':
     case 'Numpad0':
       return i.shift ? null : { type: 'zoom', delta: 0 }
