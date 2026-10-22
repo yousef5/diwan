@@ -177,6 +177,53 @@ describe('guestLimits', () => {
     const h = wrap('guest:notify', notify, vi.fn())
     for (let i = 0; i < 10_000; i++) h({ sender: { id: 1 } }, {})
     expect(spy).toHaveBeenCalledTimes(30)
-    expect(log.warn).toHaveBeenCalledTimes(1)
+    // one line for the invalid payloads, one for the throttled rest
+    expect(log.warn.mock.calls.map(([m]) => m)).toEqual(['invalid guest payload', 'guest channel throttled'])
+  })
+})
+
+describe('guardGuest throttled logging', () => {
+  afterEach(() => vi.useRealTimers())
+  const schema = z.object({ online: z.boolean() })
+
+  test('a throttled message logs once per channel per account per minute, apart from invalid ones', () => {
+    vi.useFakeTimers()
+    const log = mkLog()
+    const wrap = guardGuest<Ev>({
+      accountOf: (id) => ({ 7: 'a', 8: 'b' })[id],
+      isWhatsAppMainFrame: () => true,
+      log,
+      limits: { 'guest:online': () => false, 'guest:notify-close': () => false },
+    })
+    const online = wrap('guest:online', schema, vi.fn())
+    const close = wrap('guest:notify-close', schema, vi.fn())
+    const throttled = () => log.warn.mock.calls.filter(([m]) => m === 'guest channel throttled')
+    for (let i = 0; i < 1000; i++) online({ sender: { id: 7 } }, { online: true })
+    expect(throttled()).toEqual([['guest channel throttled', { channel: 'guest:online' }]])
+    online({ sender: { id: 8 } }, { online: true }) // another account
+    close({ sender: { id: 7 } }, { online: true }) // another channel
+    expect(throttled()).toHaveLength(3)
+    vi.advanceTimersByTime(59_999)
+    online({ sender: { id: 7 } }, { online: true })
+    expect(throttled()).toHaveLength(3)
+    vi.advanceTimersByTime(1)
+    online({ sender: { id: 7 } }, { online: true })
+    expect(throttled()).toHaveLength(4)
+  })
+
+  test('throttled and invalid lines have separate budgets', () => {
+    let open = true
+    const log = mkLog()
+    const wrap = guardGuest<Ev>({
+      accountOf: () => 'a',
+      isWhatsAppMainFrame: () => true,
+      log,
+      limits: { 'guest:online': () => open },
+    })
+    const online = wrap('guest:online', schema, vi.fn())
+    online({ sender: { id: 7 } }, {}) // invalid
+    open = false
+    online({ sender: { id: 7 } }, { online: true }) // throttled
+    expect(log.warn.mock.calls.map(([m]) => m)).toEqual(['invalid guest payload', 'guest channel throttled'])
   })
 })

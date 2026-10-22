@@ -117,6 +117,10 @@ export type GuestChannel = keyof typeof guestChannels
 export type GuestPayload<C extends GuestChannel> = z.output<(typeof guestChannels)[C]>
 
 // main → shell
+// A full Snapshot. Account, settings and active-account changes arrive at the end of the tick that
+// made them, before that handler's invoke() reply, so an awaited `account:add` already sees its
+// account in the store. Runtime churn (unread, load state, avatar) is throttled to one push per
+// SNAPSHOT_GAP_MS (src/main/state.ts). A SHELL_COMMAND is always sent after any queued snapshot.
 export const STATE_CHANGED = 'state:changed'
 export const SHELL_COMMAND = 'shell:command'
 // main → guest

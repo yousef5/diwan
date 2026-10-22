@@ -56,8 +56,8 @@ export function guardGuest<E extends IpcEventLike>(opts: {
   limits?: Partial<Record<GuestChannel, (key: string) => boolean>>
 }) {
   // A page sending garbage in a loop must not fill (and rotate away) the log: one line per
-  // channel per account per minute.
-  const allowInvalidLog = createRateLimiter(1, 60_000)
+  // channel per account per minute, for each kind of drop (key prefix).
+  const allowLog = createRateLimiter(1, 60_000)
   return function wrap<S extends z.ZodType>(
     channel: GuestChannel,
     schema: S,
@@ -68,10 +68,15 @@ export function guardGuest<E extends IpcEventLike>(opts: {
         const accountId = opts.accountOf(event.sender.id)
         if (!accountId || !opts.isWhatsAppMainFrame(event)) return
         const limit = opts.limits?.[channel]
-        if (limit && !limit(accountId)) return // throttled before any parsing work
+        if (limit && !limit(accountId)) {
+          // throttled before any parsing work
+          if (allowLog(`throttled\u0000${channel}\u0000${accountId}`))
+            opts.log.warn('guest channel throttled', { channel })
+          return
+        }
         const parsed = schema.safeParse(raw)
         if (!parsed.success) {
-          if (allowInvalidLog(`${channel}\u0000${accountId}`))
+          if (allowLog(`invalid\u0000${channel}\u0000${accountId}`))
             opts.log.warn('invalid guest payload', { channel })
           return
         }

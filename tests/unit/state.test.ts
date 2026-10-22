@@ -337,3 +337,133 @@ describe('StateHub snapshot throttle', () => {
     expect(onDisk.accounts.map((x) => x.name)).toEqual(['A', 'B'])
   })
 })
+
+describe('StateHub push contract', () => {
+  afterEach(() => vi.useRealTimers())
+  const throttled = (onListenerError?: (e: unknown) => void) =>
+    new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-')), 0), onListenerError, SNAPSHOT_GAP_MS)
+  const flushMicrotasks = () => vi.advanceTimersByTimeAsync(0)
+  // A hub that has just pushed, so the next runtime change falls inside the gap.
+  const justPushed = async () => {
+    const h = throttled()
+    const a = h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    const got: Snapshot[] = []
+    h.on('changed', (s) => got.push(s))
+    return { h, a, got }
+  }
+
+  test('a backward wall-clock step does not freeze runtime pushes', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    vi.setSystemTime(Date.now() - 3_600_000)
+    h.setRuntime(a.id, { unread: 1 })
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    expect(got.map((s) => s.runtime[a.id]?.unread)).toEqual([1])
+  })
+
+  test('a forward wall-clock step does not make a runtime push wait', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    vi.setSystemTime(Date.now() + 3_600_000)
+    h.setRuntime(a.id, { unread: 1 })
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    expect(got).toHaveLength(1)
+  })
+
+  test('account, settings and active changes push at the end of the tick, even inside the gap', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    h.updateAccount(a.id, { name: 'Renamed' })
+    await flushMicrotasks()
+    expect(got.map((s) => s.accounts[0]?.name)).toEqual(['Renamed'])
+
+    h.updateSettings({ closeToTray: false })
+    await flushMicrotasks()
+    expect(got.at(-1)?.settings.closeToTray).toBe(false)
+
+    const b = h.addAccount('B', '#14b8a6')
+    await flushMicrotasks()
+    h.setActive(b.id)
+    await flushMicrotasks()
+    expect(got.at(-1)?.activeId).toBe(b.id)
+    expect(got).toHaveLength(4)
+  })
+
+  test('notify() pushes at the end of the tick, even inside the gap', async () => {
+    vi.useFakeTimers()
+    const { h, got } = await justPushed()
+    h.importAvailable = true
+    h.notify()
+    await flushMicrotasks()
+    expect(got.map((s) => s.importAvailable)).toEqual([true])
+  })
+
+  test('a mutation folds a waiting runtime push into its own, in order, with nothing left over', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    h.setRuntime(a.id, { unread: 3 }) // inside the gap: waits
+    h.updateAccount(a.id, { muted: true })
+    await flushMicrotasks()
+    expect(got).toHaveLength(1)
+    expect(got[0]?.runtime[a.id]?.unread).toBe(3)
+    expect(got[0]?.accounts[0]?.muted).toBe(true)
+    await vi.advanceTimersByTimeAsync(10 * SNAPSHOT_GAP_MS)
+    expect(got).toHaveLength(1)
+  })
+
+  test('the push for a handler’s change goes out before ipcMain.handle replies', async () => {
+    const h = throttled()
+    const order: string[] = []
+    h.on('changed', (s) => order.push(`push:${s.accounts.length}`))
+    // What Electron does with a handle()d channel, wrapped in an async guard like ipc-guard's.
+    const guard = async () => await h.addAccount('A', '#3b82f6')
+    const reply = async () => order.push(`reply:${(await Promise.resolve(guard())).name}`)
+    await reply()
+    expect(order).toEqual(['push:1', 'reply:A'])
+  })
+
+  test('flush() sends a waiting runtime push synchronously and only once', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    h.setRuntime(a.id, { state: 'loggingOut' })
+    h.setRuntime(a.id, { state: 'loading' })
+    h.flush() // what sendShell does before a remount
+    expect(got.map((s) => s.runtime[a.id]?.state)).toEqual(['loading'])
+    await vi.advanceTimersByTimeAsync(10 * SNAPSHOT_GAP_MS)
+    expect(got).toHaveLength(1)
+    h.flush()
+    expect(got).toHaveLength(1)
+  })
+
+  test('flush() with a queued end-of-tick push sends it once', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    h.updateAccount(a.id, { name: 'X' })
+    h.flush()
+    expect(got).toHaveLength(1)
+    await flushMicrotasks()
+    expect(got).toHaveLength(1)
+  })
+
+  test('a throwing listener keeps the chain going (gap 50)', async () => {
+    vi.useFakeTimers()
+    const errors: unknown[] = []
+    const h = throttled((e) => errors.push(e))
+    let calls = 0
+    h.on('changed', () => {
+      calls++
+      throw new Error('boom')
+    })
+    const a = h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    h.setRuntime(a.id, { unread: 1 }) // inside the gap: a timer push
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    h.setRuntime(a.id, { unread: 2 }) // and the next one still goes out
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    h.updateAccount(a.id, { muted: true })
+    await flushMicrotasks()
+    expect(calls).toBe(4)
+    expect(errors).toHaveLength(4)
+  })
+})

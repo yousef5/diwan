@@ -65,7 +65,12 @@ function start(): void {
   // Saves the window geometry now; set by createWindow.
   let persistGeometry: () => void = () => {}
 
-  const sendShell = (cmd: ShellCommand) => win?.webContents.send(SHELL_COMMAND, cmd)
+  // Any queued snapshot goes first: a command (say, logout's remount) must never reach the shell
+  // before the state it follows from.
+  const sendShell = (cmd: ShellCommand) => {
+    hub.flush()
+    win?.webContents.send(SHELL_COMMAND, cmd)
+  }
   const showWindow = () => {
     if (!win) return
     if (win.isMinimized()) win.restore()

@@ -14,9 +14,20 @@ import type { DeepReadonly, Store } from './store/store'
 const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread: 0, avatar: null })
 
 // Owns everything the shell renders. Persistent data lives in the Store; runtime (unread,
-// load state, avatar) and the active account live here. Emits one 'changed' per tick, and at
-// most one per SNAPSHOT_GAP_MS: a burst is coalesced into a trailing emit of the latest state.
-// Only the pushes are throttled; persistence (Store, persistNow) is untouched.
+// load state, avatar) and the active account live here.
+//
+// Push contract ('changed', sent to the shell as STATE_CHANGED):
+// - Account, settings and active-account changes, and notify(), push at the end of the current
+//   tick: several changes in one tick still make one push, but it never waits for the gap. A
+//   trailing runtime push that is waiting is folded into it, so nothing goes out of order.
+//   The microtask runs before ipcMain.handle sends its reply, so an awaited `account:add`
+//   never resolves in the renderer before a snapshot that contains the account.
+// - Runtime churn (setRuntime: unread, load state, avatar) is throttled to one push per
+//   SNAPSHOT_GAP_MS; a burst is coalesced into a trailing push of the latest state.
+// - flush() sends a waiting push right now. Call it before any message to the shell that
+//   depends on the state (sendShell does), so a remount never overtakes the snapshot.
+// The gap is measured on the monotonic clock: a wall-clock step (NTP, a manual change) must not
+// freeze pushes. Persistence (Store, persistNow) is never throttled.
 export const SNAPSHOT_GAP_MS = 50
 
 export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
@@ -25,8 +36,11 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   trayAvailable = true
   private runtime = new Map<string, AccountRuntime>()
   private activeId: string | null
+  // A push is queued: as a microtask, or as the timer below.
   private pending = false
-  private lastEmit = Number.NEGATIVE_INFINITY
+  private timer: ReturnType<typeof setTimeout> | null = null
+  private seq = 0 // only the newest queued push may fire; older microtasks are stale
+  private lastEmit = Number.NEGATIVE_INFINITY // performance.now() of the last push
 
   constructor(
     readonly store: Store,
@@ -71,19 +85,52 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     }
   }
 
+  // Push at the end of this tick, regardless of the gap (see the contract above).
   notify(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    } else if (this.pending) return // a microtask push is already queued and will carry this
+    this.pending = true
+    this.atEndOfTick()
+  }
+
+  // Sends a queued push now, synchronously. No-op when nothing is waiting.
+  flush(): void {
+    if (this.pending) this.emitNow()
+  }
+
+  // Runtime churn: after a quiet spell the push goes out at the end of this tick; inside the gap
+  // it waits for the gap's end and then carries whatever the state is by then.
+  private notifyRuntime(): void {
     if (this.pending) return
     this.pending = true
-    const wait = this.lastEmit + this.gapMs - Date.now()
-    // After a quiet spell the push goes out at the end of this tick, as before; inside the gap it
-    // waits for the gap's end and then carries whatever the state is by then.
-    if (wait <= 0) queueMicrotask(() => this.emitNow())
-    else setTimeout(() => this.emitNow(), wait).unref?.()
+    // Clamped, so the wait can never exceed one gap whatever the clock does.
+    const wait = Math.min(this.gapMs, this.lastEmit + this.gapMs - performance.now())
+    if (wait <= 0) this.atEndOfTick()
+    else {
+      const n = ++this.seq
+      this.timer = setTimeout(() => this.fire(n), wait)
+      this.timer.unref?.()
+    }
+  }
+
+  private atEndOfTick(): void {
+    const n = ++this.seq
+    queueMicrotask(() => this.fire(n))
+  }
+
+  private fire(n: number): void {
+    if (n === this.seq && this.pending) this.emitNow()
   }
 
   private emitNow(): void {
+    if (this.timer) {
+      clearTimeout(this.timer)
+      this.timer = null
+    }
     this.pending = false
-    this.lastEmit = Date.now()
+    this.lastEmit = performance.now()
     try {
       this.emit('changed', this.snapshot())
     } catch (e) {
@@ -205,7 +252,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     const next = { ...cur, ...patch }
     if (cur.state === next.state && cur.unread === next.unread && cur.avatar === next.avatar) return
     this.runtime.set(id, next)
-    this.notify()
+    this.notifyRuntime()
   }
 
   updateSettings(patch: SettingsPatch): void {
