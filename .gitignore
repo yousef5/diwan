@@ -1,0 +1,9 @@
+node_modules/
+out/
+release/
+test-results/
+playwright-report/
+*.log
+packaging/pkg/
+packaging/src/
+packaging/*.pkg.tar.zst

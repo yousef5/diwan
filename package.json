@@ -1,0 +1,50 @@
+{
+  "name": "diwan",
+  "productName": "Diwan",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Multi-account WhatsApp Web desktop client",
+  "author": {
+    "name": "yousef5",
+    "email": "yousef5@users.noreply.github.com"
+  },
+  "license": "UNLICENSED",
+  "desktopName": "diwan.desktop",
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit --composite false -p tsconfig.node.json && tsc --noEmit --composite false -p tsconfig.web.json",
+    "lint": "biome check .",
+    "format": "biome check --write .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "e2e": "electron-vite build && playwright test",
+    "package": "electron-vite build && electron-builder --linux dir --publish never",
+    "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "2.6.2",
+    "@fontsource/inter": "^5.3.0",
+    "@fontsource/jetbrains-mono": "^5.3.0",
+    "@playwright/test": "^1.64.1",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "44.9.3",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "jsdom": "^26.1.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "tailwindcss": "^4.3.3",
+    "typescript": "~5.9.3",
+    "vite": "^7.0.0",
+    "vitest": "^4.1.12",
+    "zod": "^4.6.7",
+    "zustand": "^5.0.16"
+  }
+}
