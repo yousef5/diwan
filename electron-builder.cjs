@@ -1,13 +1,16 @@
 // electron-builder config (JS, not YAML, so `electronDist` can be a function; see below).
 //   bun run package          → release/linux-unpacked (the `dir` target; packaging/PKGBUILD wraps it
 //                              into an Arch package with `bun run package:arch`)
-//   bun run package:linux    → release/Diwan-<version>-x64.{AppImage,deb,rpm} (rpm needs `rpmbuild`)
+//   bun run package:linux    → release/Diwan-<version>-x86_64.AppImage, -amd64.deb, -x86_64.rpm
+//                              (the rpm needs `rpmbuild`; on a machine without it, e.g. Arch, use
+//                              `bun run package:linux:norpm` for just the AppImage + deb)
 //   bun run package:win      → release/Diwan-Setup-<version>.exe (NSIS; build it on Windows, i.e. CI)
 // Only the built app goes into app.asar: never tests/, src/ or the E2E fixtures.
 //
-// Not carried over from the Arch package: packaging/diwan.sh, the /usr/bin wrapper that opens a native
-// Wayland window when a Wayland socket exists. deb/rpm/AppImage start Electron directly, so on a
-// Wayland session they run under XWayland unless the user passes --ozone-platform=wayland.
+// Not carried over from the Arch package: packaging/diwan.sh, the /usr/bin wrapper that passes
+// --ozone-platform=wayland whenever a live Wayland socket exists. deb/rpm/AppImage start Electron
+// directly, and Electron 44 then picks native Wayland by itself only when XDG_SESSION_TYPE=wayland,
+// X11 otherwise (e.g. a Wayland compositor started without that variable runs Diwan under XWayland).
 //
 // AppImage note (for the README): an AppImage can't ship chrome-sandbox SUID, and Ubuntu 24.04+ blocks
 // unprivileged user namespaces through AppArmor, so the sandbox can't start there. electron-builder's
@@ -19,6 +22,7 @@ const fs = require('node:fs')
 const path = require('node:path')
 
 const localDist = path.join(__dirname, 'node_modules', 'electron', 'dist')
+const electronBinary = { linux: 'electron', win32: 'electron.exe' }
 const pinnedElectron = require('./package.json').devDependencies.electron
 
 // electronDist: reuse the Electron that `bunx install-electron --no` already put in node_modules (no
@@ -29,6 +33,8 @@ const pinnedElectron = require('./package.json').devDependencies.electron
 function electronDist(options) {
   if (process.env.DIWAN_DOWNLOAD_ELECTRON === '1') return null
   if (options.platformName !== process.platform || options.arch !== process.arch) return null
+  const binary = electronBinary[options.platformName]
+  if (!binary || !fs.existsSync(path.join(localDist, binary))) return null
   try {
     if (fs.readFileSync(path.join(localDist, 'version'), 'utf8').trim() !== pinnedElectron) return null
   } catch {
@@ -77,6 +83,8 @@ module.exports = {
     target: ['AppImage', 'deb', 'rpm'],
     artifactName: 'Diwan-${version}-${arch}.${ext}',
     category: 'Network;InstantMessaging;Chat',
+    // Debian archive section (deb "Section:"), instead of fpm's "default".
+    packageCategory: 'net',
     icon: 'resources/icon.png',
     // desktop file = diwan.desktop (package.json desktopName), matching Electron's app_id/WM_CLASS
     syncDesktopName: true,
@@ -88,14 +96,14 @@ module.exports = {
     desktop: { entry: desktopEntry },
   },
   deb: {
-    // electron-builder's defaults plus what the Electron 44 binary links against; the `|` forms cover
-    // the Ubuntu 24.04 / Debian 13 t64 renames.
+    // What the Electron 44 binary links against (readelf -d NEEDED) plus what it dlopen()s and Diwan
+    // uses: libnotify (notifications), libsecret (safeStorage). electron-builder's libxss1/libxtst6
+    // defaults are neither, so they're dropped. The `|` forms cover the Ubuntu 24.04 / Debian 13 t64
+    // renames.
     depends: [
       'libgtk-3-0 | libgtk-3-0t64',
       'libnotify4',
       'libnss3',
-      'libxss1',
-      'libxtst6',
       'xdg-utils',
       'libatspi2.0-0 | libatspi2.0-0t64',
       'libuuid1',
@@ -105,15 +113,17 @@ module.exports = {
       'libgbm1',
       'libxkbcommon0',
     ],
+    // Drops electron-builder's default Recommends (libappindicator3-1): the tray uses
+    // StatusNotifierItem over D-Bus itself, and current Debian/Ubuntu replaced that package with Ayatana.
+    recommends: [],
   },
   rpm: {
-    // Fedora names first, openSUSE second.
+    // Same rule as deb. Fedora names first, openSUSE second. No libXScrnSaver (RHEL 10 dropped it) or
+    // libXtst: the binary doesn't use them.
     depends: [
       'gtk3',
       'libnotify',
       'nss',
-      'libXScrnSaver',
-      '(libXtst or libXtst6)',
       'xdg-utils',
       'at-spi2-core',
       '(libuuid or libuuid1)',

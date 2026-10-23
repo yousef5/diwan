@@ -25,6 +25,7 @@
     "package": "electron-vite build && electron-builder --linux dir --publish never",
     "package:arch": "bun run package && PKGDEST=\"$PWD/release\" BUILDDIR=\"$PWD/release/makepkg\" makepkg -f -C -D packaging",
     "package:linux": "electron-vite build && electron-builder --linux AppImage deb rpm --publish never",
+    "package:linux:norpm": "electron-vite build && electron-builder --linux AppImage deb --publish never",
     "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never",
     "package:win": "electron-vite build && electron-builder --win nsis --x64 --publish never"
   },
