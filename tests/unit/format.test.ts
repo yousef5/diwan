@@ -15,6 +15,14 @@ describe('format', () => {
     expect(initials('𝒜b')).toBe('𝒜B')
   })
 
+  test('initials keep whole graphemes: Arabic harakat, ZWJ emoji, flags', () => {
+    expect(initials('محمد')).toBe('مح')
+    expect(initials('مُحمد')).toBe('مُح')
+    expect(initials('صيدلية الشفاء')).toBe('صا')
+    expect(initials('👨‍👩‍👧 home')).toBe('👨‍👩‍👧H')
+    expect(initials('🇪🇬🇸🇦')).toBe('🇪🇬🇸🇦')
+  })
+
   test('formatBytes', () => {
     expect(formatBytes(0)).toBe('0 B')
     expect(formatBytes(1023)).toBe('1023 B')

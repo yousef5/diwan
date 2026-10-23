@@ -1,12 +1,16 @@
 // Small display helpers for the shell. Pure: no React, no window.
 
-// Two letters for an account tile. Array.from splits by code point, so an emoji or an astral
-// letter is never cut in half.
+// Two letters for an account tile. Split by grapheme, so an emoji (even a ZWJ family or a flag)
+// is never cut in half and an Arabic letter keeps its harakat ("مُحمد" gives "مُح", not "مُ").
+// toUpperCase leaves scripts without case (Arabic) alone.
+const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
+const chars = (word: string) => Array.from(graphemes.segment(word), (s) => s.segment)
+
 export function initials(name: string): string {
   const words = name.trim().split(/\s+/).filter(Boolean)
   if (words.length === 0) return '?'
-  if (words.length === 1) return Array.from(words[0]).slice(0, 2).join('').toUpperCase()
-  return (Array.from(words[0])[0] + Array.from(words[1])[0]).toUpperCase()
+  if (words.length === 1) return chars(words[0]).slice(0, 2).join('').toUpperCase()
+  return (chars(words[0])[0] + chars(words[1])[0]).toUpperCase()
 }
 
 const UNITS = ['KB', 'MB', 'GB', 'TB']
