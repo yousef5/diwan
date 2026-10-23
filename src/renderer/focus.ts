@@ -32,3 +32,20 @@ export function focusFirst(candidates: (() => Element | null | undefined)[]): bo
   }
   return false
 }
+
+// Whether the stage (a webview, or a status overlay's button) may take focus on its own: when an
+// account is switched to, remounted or uncovered. Never away from Settings, a dialog or a menu, and
+// never from a control the user reached by keyboard outside the stage (Enter on a rail tile keeps
+// focus on the rail; a mouse click on it hands focus to WhatsApp, so typing can start at once).
+export function stageMayTakeFocus(blocked: boolean): boolean {
+  if (blocked) return false
+  const el = document.activeElement
+  if (!el || el === document.body) return true
+  if (el.closest('main')) return true
+  if (el.closest('[role="dialog"], [role="alertdialog"], [role="menu"]')) return false
+  try {
+    return !el.matches(':focus-visible')
+  } catch {
+    return true // jsdom (tests) doesn't know :focus-visible
+  }
+}
