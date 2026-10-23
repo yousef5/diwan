@@ -6,4 +6,10 @@ set -eu
 cd "$(dirname "$0")/../.."
 unset DISPLAY WAYLAND_DISPLAY DBUS_SESSION_BUS_ADDRESS XDG_SESSION_TYPE ELECTRON_RENDERER_URL
 export DIWAN_E2E_HEADLESS=1
-exec dbus-run-session --config-file=tests/e2e/fixtures/dbus-session.xml -- xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/playwright test "$@"
+# Xvfb's Mesa shader cache (and anything else that caches) goes to a throwaway dir, not ~/.cache.
+cache=$(mktemp -d "${TMPDIR:-/tmp}/diwan-e2e-cache.XXXXXX")
+trap 'rm -rf "$cache"' EXIT
+trap 'exit 130' INT TERM
+export XDG_CACHE_HOME="$cache"
+dbus-run-session --config-file=tests/e2e/fixtures/dbus-session.xml -- \
+  xvfb-run -a -s "-screen 0 1440x900x24" node_modules/.bin/playwright test "$@"

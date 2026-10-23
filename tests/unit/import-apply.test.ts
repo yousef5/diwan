@@ -14,7 +14,15 @@ import {
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { applyImport, dirSize, fsPlanDeps, nexusRunning, sweepPartials } from '../../src/main/importer/apply'
+import {
+  applyImport,
+  dirSize,
+  fsPlanDeps,
+  MAX_TEXT_BYTES,
+  nexusRunning,
+  readSmallText,
+  sweepPartials,
+} from '../../src/main/importer/apply'
 import { planImport } from '../../src/main/importer/plan'
 import { createLogger } from '../../src/main/log'
 import { StateHub } from '../../src/main/state'
@@ -314,5 +322,44 @@ describe('import apply', () => {
 
   test('dirSize of a missing folder is 0', () => {
     expect(dirSize('/nonexistent/dir')).toBe(0)
+  })
+})
+
+// Reached at startup (hasImportable): anything but a small regular file must return null at once.
+describe('fsPlanDeps.readText', () => {
+  test('a small regular file is read', () => {
+    const d = tmp('diwan-read-')
+    writeFileSync(join(d, 'config.json'), '{"accounts":[]}')
+    expect(fsPlanDeps.readText(join(d, 'config.json'))).toBe('{"accounts":[]}')
+    expect(fsPlanDeps.readText(join(d, 'missing.json'))).toBeNull()
+  })
+
+  test('a symlink is never followed, not even to a real file or /dev/zero', () => {
+    const d = tmp('diwan-read-')
+    writeFileSync(join(d, 'real.json'), '{"accounts":[]}')
+    symlinkSync(join(d, 'real.json'), join(d, 'link.json'))
+    symlinkSync('/dev/zero', join(d, 'zero.json'))
+    expect(fsPlanDeps.readText(join(d, 'link.json'))).toBeNull()
+    expect(fsPlanDeps.readText(join(d, 'zero.json'))).toBeNull()
+  })
+
+  test('a FIFO returns null without blocking', () => {
+    const d = tmp('diwan-read-')
+    execFileSync('mkfifo', [join(d, 'config.json')])
+    expect(fsPlanDeps.readText(join(d, 'config.json'))).toBeNull()
+  })
+
+  test('devices and directories return null', () => {
+    expect(fsPlanDeps.readText('/dev/zero')).toBeNull()
+    expect(fsPlanDeps.readText(tmp('diwan-read-'))).toBeNull()
+  })
+
+  test('a file over the limit returns null; one at the limit is read', () => {
+    const d = tmp('diwan-read-')
+    writeFileSync(join(d, 'big.json'), Buffer.alloc(MAX_TEXT_BYTES + 1, 0x20))
+    writeFileSync(join(d, 'edge.json'), Buffer.alloc(MAX_TEXT_BYTES, 0x20))
+    expect(fsPlanDeps.readText(join(d, 'big.json'))).toBeNull()
+    expect(fsPlanDeps.readText(join(d, 'edge.json'))?.length).toBe(MAX_TEXT_BYTES)
+    expect(readSmallText(join(d, 'edge.json'), 10)).toBeNull()
   })
 })

@@ -13,4 +13,6 @@ export default defineConfig({
   retries: 0,
   forbidOnly: true,
   reporter: 'list',
+  // a rare failure leaves a trace (test-results/) to open with `bunx playwright show-trace`
+  use: { trace: 'retain-on-failure' },
 })

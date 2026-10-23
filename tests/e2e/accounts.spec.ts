@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { expect, type Page, test } from '@playwright/test'
 import {
@@ -51,6 +51,12 @@ test.afterAll(async () => {
 })
 
 test('first launch shows the empty state', async () => {
+  // the app runs under its own name and version (the fixture app folder carries package.json's)
+  const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'))
+  expect(await run.app.evaluate(({ app }) => [app.getName(), app.getVersion()])).toEqual([
+    pkg.productName,
+    pkg.version,
+  ])
   await expect(page.getByRole('heading', { name: 'Welcome to Diwan' })).toBeVisible()
   // no Nexus in this profile: nothing to import, so no dialog and no import button
   await expect(page.getByRole('dialog')).toHaveCount(0)

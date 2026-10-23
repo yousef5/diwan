@@ -1,5 +1,17 @@
 import { randomUUID } from 'node:crypto'
-import { constants, existsSync, lstatSync, readdirSync, readFileSync, readlinkSync, statSync } from 'node:fs'
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  openSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  readSync,
+  statSync,
+} from 'node:fs'
 import { cp, lstat, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ImportPlan, ImportResult } from '../../shared/types'
@@ -30,14 +42,41 @@ export function dirSize(path: string): number {
   return total
 }
 
-export const fsPlanDeps: PlanDeps = {
-  readText: (p) => {
+// Nexus's config.json is a few KB; anything bigger is not it.
+export const MAX_TEXT_BYTES = 1024 * 1024
+
+// Reads a small regular file, never anything else: this runs at startup (hasImportable), where a
+// symlink (say, to /dev/zero), a FIFO or a huge file must not hang or flood the app. Null for
+// all of those, a missing file, or any error.
+export function readSmallText(path: string, max = MAX_TEXT_BYTES): string | null {
+  try {
+    const st = lstatSync(path)
+    if (!st.isFile() || st.size > max) return null
+    // O_NOFOLLOW: a symlink swapped in after the lstat fails the open; O_NONBLOCK: so does a FIFO
+    // (it would open without blocking, then fail the fstat check below).
+    const fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
     try {
-      return readFileSync(p, 'utf8')
-    } catch {
-      return null
+      const opened = fstatSync(fd)
+      if (!opened.isFile() || opened.size > max) return null
+      // Read at most max + 1 bytes, so a file that grew after the checks is still refused.
+      const buf = Buffer.alloc(max + 1)
+      let n = 0
+      while (n < buf.length) {
+        const r = readSync(fd, buf, n, buf.length - n, null)
+        if (r === 0) break
+        n += r
+      }
+      return n > max ? null : buf.subarray(0, n).toString('utf8')
+    } finally {
+      closeSync(fd)
     }
-  },
+  } catch {
+    return null
+  }
+}
+
+export const fsPlanDeps: PlanDeps = {
+  readText: (p) => readSmallText(p),
   // Only real directories: symlinks, FIFOs and files are never offered for import.
   listDir: (p) => {
     try {

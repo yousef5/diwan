@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { type ElectronApplication, _electron as electron, expect, type Page } from '@playwright/test'
@@ -47,11 +47,25 @@ export interface Running {
   page: Page
 }
 
+// Electron runs a tiny app folder in the profile: a package.json carrying the real app's name and
+// version (read from the repo's, never copied by hand), and an entry that loads fixtures/main.cjs.
+function appDir(p: Profile): string {
+  const dir = join(p.root, 'app')
+  const pkg = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8'))
+  mkdirSync(dir, { recursive: true })
+  writeFileSync(
+    join(dir, 'package.json'),
+    JSON.stringify({ name: pkg.name, productName: pkg.productName, version: pkg.version, main: 'main.cjs' }),
+  )
+  writeFileSync(join(dir, 'main.cjs'), `require(${JSON.stringify(join(FIXTURE, 'main.cjs'))})\n`)
+  return dir
+}
+
 export async function launch(p: Profile): Promise<Running> {
   // A dev server URL would make main load the shell from it.
   const { ELECTRON_RENDERER_URL: _dev, ...env } = process.env
   const app = await electron.launch({
-    args: ['--ozone-platform=x11', FIXTURE],
+    args: ['--ozone-platform=x11', appDir(p)],
     env: {
       ...(env as Record<string, string>),
       HOME: p.home,
@@ -101,7 +115,13 @@ export async function addAccount(page: Page, name: string): Promise<void> {
   const dialog = page.getByRole('dialog')
   await dialog.getByPlaceholder('Personal, Pharmacy, Family…').fill(name)
   await dialog.getByRole('button', { name: 'Add account' }).click()
-  await expect(dialog).toBeHidden()
+  try {
+    await expect(dialog).toBeHidden()
+  } catch (e) {
+    // say what the dialog shows (a name error? main's failure?), not just that it stayed
+    const shown = await dialog.textContent({ timeout: 1000 }).catch(() => '(unreadable)')
+    throw new Error(`the Add account dialog stayed open for "${name}", showing: ${shown}`, { cause: e })
+  }
   await expect(tile(page, name)).toBeVisible()
 }
 

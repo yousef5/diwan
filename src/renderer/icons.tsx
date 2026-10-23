@@ -56,11 +56,13 @@ export function Icon({ name, size = 18, className }: { name: IconName; size?: nu
   )
 }
 
-// The Diwan mark: an arch (majlis doorway) holding a speech bubble. Same drawing as resources/icon.svg.
+// The Diwan mark: an arch (majlis doorway) holding a speech bubble. The same drawing as
+// resources/icon.svg (without its tile and dot): the icon's 64–448 box scaled by 1/16 onto this
+// 24 grid, so x' = x / 16 - 4, y' = y / 16 - 4, and its 30 px stroke is 1.875.
 export const MARK_PATHS = [
-  'M4 21V11a8 8 0 0 1 16 0v10',
-  'M4 21h16',
-  'M9 12.5h6a1.5 1.5 0 0 1 1.5 1.5v2a1.5 1.5 0 0 1-1.5 1.5h-3l-2.5 2v-2H9A1.5 1.5 0 0 1 7.5 16v-2A1.5 1.5 0 0 1 9 12.5z',
+  'M4 21V10.5a8 8 0 0 1 16 0V21',
+  'M3 21h18',
+  'M8.75 9h6.5a1.75 1.75 0 0 1 1.75 1.75v2.5a1.75 1.75 0 0 1-1.75 1.75h-3.5l-1.75 1.625V15h-1.25A1.75 1.75 0 0 1 7 13.25v-2.5A1.75 1.75 0 0 1 8.75 9z',
 ]
 
 export function DiwanMark({ size = 22 }: { size?: number }) {
@@ -71,7 +73,7 @@ export function DiwanMark({ size = 22 }: { size?: number }) {
       viewBox="0 0 24 24"
       fill="none"
       stroke="currentColor"
-      strokeWidth={1.8}
+      strokeWidth={1.875}
       strokeLinecap="round"
       strokeLinejoin="round"
       role="img"

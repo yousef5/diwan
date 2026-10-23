@@ -1,14 +1,17 @@
 import { readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { expect, test } from '@playwright/test'
+import { type ElectronApplication, expect, test } from '@playwright/test'
 import { addAccount, dropProfile, launch, makeProfile, onDisk, readDiwan } from './helpers'
 
 test('a damaged settings file opens in recovery mode, and Start fresh recovers', async () => {
   const profile = makeProfile()
   const damaged = '{"schemaVersion": 1, "accounts": [ broken'
   writeFileSync(join(profile.userData, 'diwan.json'), damaged)
-  const { app, page } = await launch(profile)
+  let app: ElectronApplication | undefined
   try {
+    const launched = await launch(profile)
+    app = launched.app
+    const page = launched.page
     const banner = page.getByRole('alert').filter({ hasText: 'settings file is damaged' })
     await expect(banner).toBeVisible()
     // nothing can be added (it could not be saved), and the damaged file is left alone
@@ -34,11 +37,12 @@ test('a damaged settings file opens in recovery mode, and Start fresh recovers',
     await page.getByRole('main').getByRole('button', { name: 'Add account' }).click()
     await page.getByRole('dialog').getByPlaceholder('Personal, Pharmacy, Family…').fill('Fresh')
     await page.getByRole('dialog').getByRole('button', { name: 'Add account' }).click()
+    await expect(page.getByRole('dialog')).toBeHidden()
     await expect(page.locator('[data-account-tile]')).toHaveCount(1)
     await addAccount(page, 'Second')
     await onDisk(profile, (f) => f.accounts.map((a) => a.name).join() === 'Fresh,Second', 'accounts saved')
   } finally {
-    await app.close()
+    await app?.close()
     dropProfile(profile)
   }
 })

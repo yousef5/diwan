@@ -1,5 +1,6 @@
-// Test-only Electron entry for the E2E suite. Playwright launches Electron with THIS file instead of
-// the app's own entry: it serves a stand-in https://web.whatsapp.com, cuts off the network, records
+// Test-only Electron entry for the E2E suite. Playwright launches Electron on a throwaway app folder
+// (tests/e2e/helpers.ts: the real name and version, and an entry that requires THIS file) instead of
+// the app's own entry. It serves a stand-in https://web.whatsapp.com, cuts off the network, records
 // what main does with notifications and the tray, then loads the real built app (out/main/index.js).
 // Production code has no test hook: none of this exists unless Electron is started on this file, and
 // electron-builder only packages out/**.
@@ -13,6 +14,21 @@ for (const key of ['HOME', 'DIWAN_USER_DATA', 'DIWAN_NEXUS_HOME', 'XDG_DOWNLOAD_
   const value = process.env[key]
   if (!value || !resolve(value).startsWith(scratch)) {
     console.error(`[e2e] refusing to start: ${key} is not a throwaway directory (${value})`)
+    process.exit(2)
+  }
+}
+
+// And only on run.sh's private display and bus (xvfb-run + dbus-run-session), never the real
+// desktop's: even `DIWAN_E2E_HEADLESS=1 playwright test` from a desktop terminal stops here.
+const bus = process.env.DBUS_SESSION_BUS_ADDRESS ?? ''
+const headless = [
+  ['WAYLAND_DISPLAY is set', !!process.env.WAYLAND_DISPLAY],
+  ['DBUS_SESSION_BUS_ADDRESS is the desktop bus (or unset)', !bus || bus.includes('/run/user/')],
+  ['XAUTHORITY is not xvfb-run’s', !(process.env.XAUTHORITY ?? '').startsWith(join(tmpdir(), 'xvfb-run.'))],
+]
+for (const [why, bad] of headless) {
+  if (bad) {
+    console.error(`[e2e] refusing to start: ${why}; run the suite with \`bun run e2e\``)
     process.exit(2)
   }
 }

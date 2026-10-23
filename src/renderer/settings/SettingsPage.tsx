@@ -429,7 +429,9 @@ function Data({ snap }: { snap: Snapshot }) {
               ? 'Not while the settings file is damaged.'
               : importAvailable
                 ? 'Moves your Nexus accounts across, already signed in.'
-                : 'Nexus wasn’t found on this computer, or it has nothing left to import.'
+                : snap.accounts.some((a) => a.importedFrom !== undefined)
+                  ? 'Opens the import to check what Nexus has now.'
+                  : 'Nexus wasn’t found on this computer, or it has no signed-in accounts.'
           }
           control={(hintId) => (
             <Button
