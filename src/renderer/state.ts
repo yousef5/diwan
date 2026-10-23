@@ -26,6 +26,10 @@ export interface MenuState {
   id: string
   x: number
   y: number
+  // The anchor's bottom edge, for a menu opened beside a tile by keyboard: with no room below, the
+  // menu flips up so its bottom lines up with the tile instead of covering it. Absent: the menu
+  // flips up from y (a pointer position).
+  flipY?: number
 }
 
 export interface Toast {
@@ -53,6 +57,9 @@ interface UiState {
   // menu), so a dialog started from the menu can hand focus back to that account's rail tile.
   menuTrigger: string | null
   toasts: Toast[]
+  // An import is copying: its dialog must stay until it reports, so openDialog refuses to replace
+  // or close it (Settings and the menu can't open another dialog over the result).
+  importBusy: boolean
   // Hover or focus on the toast stack: auto-dismiss timers stop and keep their remaining time.
   toastsPaused: boolean
   setSnap(s: Snapshot): void
@@ -61,6 +68,7 @@ interface UiState {
   closeSettings(): void
   openDialog(d: DialogState): void
   openMenu(m: MenuState | null): void
+  setImportBusy(busy: boolean): void
   toast(text: string, opts?: { error?: boolean }): void
   dismissToast(id: number): void
   setToastsPaused(paused: boolean): void
@@ -97,6 +105,7 @@ export const useUi = create<UiState>((set, get) => {
     menu: null,
     menuTrigger: null,
     toasts: [],
+    importBusy: false,
     toastsPaused: false,
 
     // A menu, edit dialog or account confirmation for an account that no longer exists would act
@@ -119,7 +128,11 @@ export const useUi = create<UiState>((set, get) => {
     openSettings: (section) =>
       set((s) => ({ settingsOpen: true, section: section ?? s.section, menu: null })),
     closeSettings: () => set({ settingsOpen: false }),
-    openDialog: (dialog) => set({ dialog, menu: null }),
+    openDialog: (dialog) => {
+      if (get().importBusy && get().dialog?.kind === 'import') return
+      set({ dialog, menu: null })
+    },
+    setImportBusy: (importBusy) => set({ importBusy }),
     openMenu: (menu) => set((s) => ({ menu, menuTrigger: menu ? menu.id : s.menuTrigger })),
 
     // A repeated message (say, the same failure twice) shows once, with a fresh timer. At most

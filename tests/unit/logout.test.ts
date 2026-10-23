@@ -1,5 +1,10 @@
+import { mkdtempSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { expect, test, vi } from 'vitest'
 import { type LogoutDeps, logoutAccount } from '../../src/main/logout'
+import { StateHub } from '../../src/main/state'
+import { Store } from '../../src/main/store/store'
 import type { AccountRuntime, ShellCommand } from '../../src/shared/types'
 
 function setup(over: Partial<LogoutDeps> = {}) {
@@ -79,4 +84,38 @@ test('an unknown account is a no-op', async () => {
   const { d, sent } = setup({ hasAccount: () => false })
   await logoutAccount('a', d)
   expect(sent).toHaveLength(0)
+})
+
+// The real pieces: a StateHub (throttled runtime pushes) and a sendShell that flushes it first, as
+// main's does. What the shell receives must be loggingOut … remount … loading, never loading first.
+test('with a real StateHub and a flushing sendShell, the shell sees the remount before loading', async () => {
+  const hub = new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-logout-')), 0), undefined, 50)
+  const { id } = hub.addAccount('A', '#2563eb')
+  hub.setRuntime(id, { state: 'ready' })
+  await new Promise((r) => setTimeout(r, 60))
+  const shell: string[] = []
+  hub.on('changed', (s) => shell.push(`snap:${s.runtime[id]?.state}`))
+  await logoutAccount(id, {
+    hasAccount: (x) => !!hub.account(x),
+    runtimeOf: (x) => hub.runtimeOf(x),
+    setRuntime: (x, p) => hub.setRuntime(x, p),
+    clearCustomAvatar: (x) => hub.updateAccount(x, { customAvatar: false }),
+    hasGuest: () => false,
+    clearSession: async () => {},
+    removeAvatar: () => {},
+    forgetNotifications: () => {},
+    forgetAvatar: () => {},
+    sendShell: (c) => {
+      hub.flush()
+      shell.push(c.type)
+    },
+    log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+  })
+  await new Promise((r) => setTimeout(r, 120)) // let the trailing push out
+  const remount = shell.indexOf('remount')
+  expect(remount).toBeGreaterThan(0)
+  expect(shell.slice(0, remount)).not.toContain('snap:loading')
+  expect(shell[remount - 1]).toBe('snap:loggingOut')
+  expect(shell.slice(remount + 1)).toEqual(['snap:loading'])
+  expect(hub.runtimeOf(id).state).toBe('loading')
 })

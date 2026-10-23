@@ -12,7 +12,7 @@ import { sweepStaleDownloadParts } from './downloads'
 import { applyGuestPreferences, isAllowedGuest, partitionOf } from './guest-config'
 import { resetCrashes, wireGuest } from './guests'
 import { applyImport, fsPlanDeps, nexusRunning, sweepPartials } from './importer/apply'
-import { planImport } from './importer/plan'
+import { planForApply, planImport } from './importer/plan'
 import { forgetAvatar, registerGuestIpc } from './ipc-guest'
 import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
@@ -409,10 +409,8 @@ function start(): void {
         },
         applyImport: async () => {
           if (nexusRunning(paths.nexusUserData)) throw new Error('Quit Nexus first, then import again.')
-          const plan = planImport(
-            { nexusConfig: paths.nexusConfig, nexusPartitions },
-            fsPlanDeps,
-            importedSources(),
+          const plan = planForApply(
+            planImport({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources()),
           )
           return applyImport(plan, {
             hub,

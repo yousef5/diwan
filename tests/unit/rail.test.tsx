@@ -234,10 +234,10 @@ describe('Rail', () => {
     t.getBoundingClientRect = () => ({ top: 120, right: 56, left: 12, bottom: 164 }) as DOMRect
     fireEvent.keyDown(t, { key: 'F10', shiftKey: true })
     fireEvent.contextMenu(t, { clientX: 34, clientY: 142 }) // where Chromium puts it
-    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120 })
+    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120, flipY: 164 })
     fireEvent.keyDown(t, { key: 'ContextMenu' })
     fireEvent.contextMenu(t, { clientX: 34, clientY: 142 })
-    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120 })
+    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120, flipY: 164 })
     // the flag is used up: a right-click right after is at the pointer again
     fireEvent.contextMenu(t, { clientX: 30, clientY: 130 })
     expect(useUi.getState().menu).toEqual({ id: 'c', x: 30, y: 130 })
@@ -248,7 +248,7 @@ describe('Rail', () => {
     const t = tile(/^Family/)
     t.getBoundingClientRect = () => ({ top: 120, right: 56, left: 12, bottom: 164 }) as DOMRect
     fireEvent.contextMenu(t, { clientX: 0, clientY: 0 })
-    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120 })
+    expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 120, flipY: 164 })
   })
 })
 

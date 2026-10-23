@@ -304,21 +304,39 @@ describe('ImportDialog', () => {
     expect(await screen.findByRole('list', { name: 'Accounts to import' })).toBeTruthy()
   })
 
-  test('main refuses the import: its message shows, never a success', async () => {
+  test('main refuses because Nexus is running: one clear warning, never a success', async () => {
     const user = userEvent.setup()
-    mainWith([PLAN, { ...PLAN, nexusRunning: true }], () =>
+    mainWith([PLAN, { ...PLAN, nexusRunning: true }, PLAN], () =>
       Promise.reject(mainError('importer:apply', 'Quit Nexus first, then import again.')),
     )
     open({ kind: 'import' })
     await user.click(await screen.findByRole('button', { name: 'Import 2 accounts' }))
-    await waitFor(() => expect(screen.getAllByRole('alert')).toHaveLength(2))
-    const text = screen.getAllByRole('alert').map((a) => a.textContent)
-    expect(text.some((t) => t?.includes('Import failed: Quit Nexus first, then import again.'))).toBe(true)
-    expect(text.some((t) => t?.includes('Quit Nexus first.'))).toBe(true)
+    // the re-plan shows Nexus running; main's refusal would only repeat that warning
+    await waitFor(() => expect(screen.getByRole('alert').textContent).toContain('Quit Nexus first.'))
+    expect(screen.getAllByRole('alert')).toHaveLength(1)
+    expect(screen.queryByText(/Import failed/)).toBeNull()
     expect(screen.queryByRole('dialog', { name: 'Import finished' })).toBeNull()
     expect(screen.getByRole('dialog', { name: 'Import from Nexus' })).toBeTruthy()
     expect((importButton() as HTMLButtonElement).disabled).toBe(true)
     expect(useUi.getState().toasts).toEqual([])
+    // Nexus quit: "Check again" clears everything and the import is offered again
+    await user.click(screen.getByRole('button', { name: 'Check again' }))
+    await waitFor(() => expect(screen.queryByRole('alert')).toBeNull())
+    expect((importButton() as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  test('any other failure from main shows as written (long paths wrap), never a success', async () => {
+    const user = userEvent.setup()
+    const msg =
+      'EACCES: permission denied, open /home/joe/.config/Diwan/Partitions/acc-0a000000-0000-4000-8000-00000000000a.partial'
+    mainWith([PLAN], () => Promise.reject(mainError('importer:apply', msg)))
+    open({ kind: 'import' })
+    await user.click(await screen.findByRole('button', { name: 'Import 2 accounts' }))
+    const alert = await screen.findByRole('alert')
+    expect(alert.textContent).toBe(`Import failed: ${msg}`)
+    expect(alert.querySelector('.\\[overflow-wrap\\:anywhere\\]')).not.toBeNull()
+    expect(screen.queryByRole('dialog', { name: 'Import finished' })).toBeNull()
+    expect((importButton() as HTMLButtonElement).disabled).toBe(false) // it can be tried again
   })
 
   test('while importing: progress shows, and the dialog cannot be dismissed', async () => {
@@ -333,7 +351,12 @@ describe('ImportDialog', () => {
     expect((screen.getByRole('button', { name: 'Cancel' }) as HTMLButtonElement).disabled).toBe(true)
     await user.keyboard('{Escape}')
     expect(screen.getByRole('dialog')).toBeTruthy()
+    // nothing else (Settings, the menu) can replace it either
+    expect(useUi.getState().importBusy).toBe(true)
+    act(() => useUi.getState().openDialog({ kind: 'add' }))
+    expect(useUi.getState().dialog).toEqual({ kind: 'import' })
     await act(async () => finish({ imported: ['Work', 'محمد يوسف'], failed: [] }))
+    expect(useUi.getState().importBusy).toBe(false)
     expect(screen.getByRole('dialog', { name: 'Import finished' })).toBeTruthy()
     expect(document.activeElement).toBe(screen.getByRole('button', { name: 'Done' }))
   })

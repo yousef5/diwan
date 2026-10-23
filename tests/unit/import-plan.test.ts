@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { type PlanDeps, planImport } from '../../src/main/importer/plan'
+import { type PlanDeps, planForApply, planImport } from '../../src/main/importer/plan'
 import { ACCOUNT_COLORS } from '../../src/shared/palette'
 
 const paths = {
@@ -139,5 +139,28 @@ describe('planImport', () => {
   test('names are trimmed again after truncation', () => {
     const plan = planImport(paths, deps(cfg([{ id: 'aaa', name: `${'x'.repeat(39)} yyy` }]), ['wa-aaa']))
     expect(plan.items[0]?.name).toBe('x'.repeat(39))
+  })
+})
+
+describe('planForApply (the re-plan right before copying)', () => {
+  test('nothing to import for any reason but "already imported" is an error with that reason', () => {
+    expect(() => planForApply(planImport(paths, deps(null, [])))).toThrow(
+      'Nexus is not installed on this computer',
+    )
+    expect(() => planForApply(planImport(paths, deps('{oops', [])))).toThrow('Nexus settings file is damaged')
+    expect(() => planForApply(planImport(paths, deps(cfg([{ id: 'aaa', name: 'A' }]), [])))).toThrow(
+      'Nexus has no signed-in accounts',
+    )
+    expect(() =>
+      planForApply({ available: false, reason: null, items: [], orphanDirs: 0, nexusRunning: false }),
+    ).toThrow('Nothing to import')
+  })
+
+  test('"already imported" and a real plan pass through', () => {
+    const all = planImport(paths, deps(cfg([{ id: 'aaa', name: 'A' }]), ['wa-aaa']), new Set(['aaa']))
+    expect(all.reason).toBe('Already imported')
+    expect(planForApply(all)).toBe(all)
+    const plan = planImport(paths, deps(cfg([{ id: 'aaa', name: 'A' }]), ['wa-aaa']))
+    expect(planForApply(plan)).toBe(plan)
   })
 })

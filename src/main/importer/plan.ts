@@ -61,3 +61,12 @@ export function planImport(
   if (items.length === 0) return { ...unavailable('Nexus has no signed-in accounts'), orphanDirs }
   return { available: true, reason: null, items, orphanDirs, nexusRunning: false }
 }
+
+// The plan main re-reads right before copying. Nothing to import because everything is already in
+// is fine (the result says nothing was imported); any other reason (Nexus uninstalled, its file
+// damaged, no accounts left) is an error, so the dialog never reads it as "already in Diwan".
+export function planForApply(plan: ImportPlan): ImportPlan {
+  if (!plan.available && plan.reason !== 'Already imported')
+    throw new Error(plan.reason ?? 'Nothing to import')
+  return plan
+}

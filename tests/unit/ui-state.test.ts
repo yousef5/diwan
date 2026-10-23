@@ -139,6 +139,22 @@ describe('ui state', () => {
     expect(ui().dialog).toBeNull()
   })
 
+  test('a running import can be neither replaced nor closed; idle, it can', () => {
+    ui().openDialog({ kind: 'import' })
+    ui().setImportBusy(true)
+    ui().openDialog({ kind: 'add' })
+    ui().openDialog({ kind: 'edit', id: 'a' })
+    ui().openDialog(null)
+    expect(ui().dialog).toEqual({ kind: 'import' })
+    ui().setImportBusy(false)
+    ui().openDialog({ kind: 'add' })
+    expect(ui().dialog).toEqual({ kind: 'add' })
+    // a stale busy flag never blocks other dialogs
+    ui().setImportBusy(true)
+    ui().openDialog(null)
+    expect(ui().dialog).toBeNull()
+  })
+
   test('a toast disappears on its own after TOAST_MS', () => {
     ui().toast('Saved')
     expect(ui().toasts.map((t) => t.text)).toEqual(['Saved'])

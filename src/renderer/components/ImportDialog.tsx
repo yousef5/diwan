@@ -39,7 +39,7 @@ function Notice({ tone, children }: { tone: 'warn' | 'error'; children: ReactNod
         size={15}
         className={`mt-0.5 shrink-0 ${tone === 'warn' ? 'text-warn' : 'text-danger'}`}
       />
-      <div className="min-w-0 flex-1">{children}</div>
+      <div className="min-w-0 flex-1 [overflow-wrap:anywhere]">{children}</div>
     </div>
   )
 }
@@ -70,6 +70,13 @@ export function ImportDialog() {
   useEffect(() => {
     void load()
   }, [load])
+  // "Check again" / "Try again": a new look at Nexus replaces the last failure.
+  const recheck = () => {
+    setApplyError(null)
+    void load()
+  }
+  // Never leave the store thinking an import is still running.
+  useEffect(() => () => useUi.getState().setImportBusy(false), [])
 
   // A phase change can unmount or disable the focused button (Import → Done): keep focus inside.
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs on purpose after every phase change
@@ -85,15 +92,21 @@ export function ImportDialog() {
   const apply = async (plan: ImportPlan) => {
     setApplyError(null)
     setPhase({ at: 'applying', plan })
-    const r = await attempt('importer:apply')
-    if (r.ok) {
-      setPhase({ at: 'done', result: r.value })
-      return
+    const store = useUi.getState()
+    store.setImportBusy(true)
+    try {
+      const r = await attempt('importer:apply')
+      if (r.ok) {
+        setPhase({ at: 'done', result: r.value })
+        return
+      }
+      setApplyError(r.error)
+      // Main refused or failed: show the plan as it is now (say, Nexus is running after all).
+      const again = await attempt('importer:plan')
+      setPhase(again.ok ? { at: 'plan', plan: again.value } : { at: 'plan', plan })
+    } finally {
+      store.setImportBusy(false)
     }
-    setApplyError(r.error)
-    // Main refused or failed: show the plan as it is now (say, Nexus is running after all).
-    const again = await attempt('importer:plan')
-    setPhase(again.ok ? { at: 'plan', plan: again.value } : { at: 'plan', plan })
   }
 
   if (phase.at === 'done') {
@@ -149,7 +162,7 @@ export function ImportDialog() {
             <ul className="mt-1.5 flex flex-col gap-1 pl-0">
               {failed.map((f, i) => (
                 // biome-ignore lint/suspicious/noArrayIndexKey: names can repeat; the list never reorders
-                <li key={i} className="text-fg-dim">
+                <li key={i} className="text-fg-dim [overflow-wrap:anywhere]">
                   <span dir="auto" className="bidi-plain font-medium text-fg">
                     {f.name}
                   </span>
@@ -205,7 +218,7 @@ export function ImportDialog() {
         {phase.at === 'loadFailed' && (
           <Notice tone="error">
             <p className="m-0">Diwan couldn’t read Nexus’s accounts: {phase.error}</p>
-            <Button variant="ghost" className="mt-2 h-8" onClick={() => void load()}>
+            <Button variant="ghost" className="mt-2 h-8" onClick={recheck}>
               Try again
             </Button>
           </Notice>
@@ -286,12 +299,13 @@ export function ImportDialog() {
               It is running, and copying a login it is using could sign that account out. Quit it (tray icon →
               Quit), then check again.
             </p>
-            <Button variant="ghost" className="mt-2 h-8" onClick={() => void load()}>
+            <Button variant="ghost" className="mt-2 h-8" onClick={recheck}>
               Check again
             </Button>
           </Notice>
         )}
-        {applyError && !busy && (
+        {/* While Nexus is running the warning above already says what to do. */}
+        {applyError && !busy && !plan?.nexusRunning && (
           <Notice tone="error">
             <p className="m-0">Import failed: {applyError}</p>
           </Notice>

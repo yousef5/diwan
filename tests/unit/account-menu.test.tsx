@@ -263,10 +263,44 @@ describe('AccountMenu', () => {
     }
   })
 
+  test('opened by keyboard near the bottom: flips up so it ends at the tile’s bottom, not over it', () => {
+    show()
+    const t = tile(/^Family/)
+    t.getBoundingClientRect = () => ({ top: 600, bottom: 644, left: 12, right: 56 }) as DOMRect
+    const rect = Element.prototype.getBoundingClientRect
+    Element.prototype.getBoundingClientRect = function (this: Element) {
+      return (this as HTMLElement).dataset.testid === 'account-menu'
+        ? ({ width: 228, height: 260, top: 0, left: 0, right: 228, bottom: 260 } as DOMRect)
+        : rect.call(this)
+    }
+    try {
+      t.focus()
+      fireEvent.keyDown(t, { key: 'F10', shiftKey: true })
+      fireEvent.contextMenu(t, { clientX: 34, clientY: 622 })
+      expect(useUi.getState().menu).toEqual({ id: 'c', x: 64, y: 600, flipY: 644 })
+      expect(screen.getByTestId('account-menu').style.top).toBe(`${644 - 260}px`)
+    } finally {
+      Element.prototype.getBoundingClientRect = rect
+    }
+  })
+
+  test('a press on the header or padding keeps focus in the menu (it doesn’t blur-close)', () => {
+    show()
+    openOn(/^Family/)
+    const header = screen.getByTestId('account-menu').firstElementChild as HTMLElement
+    expect(fireEvent.mouseDown(header)).toBe(false) // default prevented: focus doesn't move
+    expect(fireEvent.mouseDown(screen.getByTestId('account-menu'))).toBe(false)
+    expect(fireEvent.mouseDown(item('Reload'))).toBe(true) // items still take focus
+    expect(screen.getByRole('menu')).toBeTruthy()
+  })
+
   test('placeMenu', () => {
     expect(placeMenu(100, 100, 228, 260, 1024, 768)).toEqual({ left: 100, top: 100 })
     expect(placeMenu(1000, 100, 228, 260, 1024, 768)).toEqual({ left: 788, top: 100 })
     expect(placeMenu(100, 700, 228, 260, 1024, 768)).toEqual({ left: 100, top: 440 })
+    // flipY: a menu beside a tile ends at the tile's bottom
+    expect(placeMenu(64, 600, 228, 260, 1024, 768, 644)).toEqual({ left: 64, top: 384 })
+    expect(placeMenu(64, 100, 228, 260, 1024, 768, 144)).toEqual({ left: 64, top: 100 }) // fits below
     // taller than the room above and below: pinned to the bottom edge, never above the top
     expect(placeMenu(-50, 300, 228, 600, 1024, 500)).toEqual({ left: 8, top: 8 })
     expect(placeMenu(10, 400, 228, 300, 1024, 600)).toEqual({ left: 10, top: 100 })
@@ -347,6 +381,45 @@ describe('AccountMenu actions', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     // focus lands on the active tile, not <body>
     expect(document.activeElement).toBe(tile(/^Pharmacy/))
+  })
+
+  test('after Remove, focus moves to the tile that took its place, never <body>', async () => {
+    const user = await run(/^Family/, 'Remove account…')
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    expect(document.activeElement).toBe(tile(/^Family/)) // the confirm handed focus back
+    act(() => {
+      const s = snapshot()
+      useUi.getState().setSnap({ ...s, accounts: s.accounts.filter((a) => a.id !== 'c') })
+    })
+    expect(document.activeElement).toBe(tile(/^محمد/))
+  })
+
+  test('removing the last tile in the rail: focus goes to the one before it', async () => {
+    const user = await run(/^محمد/, 'Remove account…')
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    act(() => {
+      const s = snapshot()
+      useUi.getState().setSnap({ ...s, accounts: s.accounts.filter((a) => a.id !== 'd') })
+    })
+    expect(document.activeElement).toBe(tile(/^Family/))
+  })
+
+  test('removing the only account: focus goes to <main>', async () => {
+    const user = await run(/^Personal/, 'Remove account…')
+    await user.click(screen.getByRole('button', { name: 'Remove' }))
+    act(() => useUi.getState().setSnap(snapshot({ accounts: [], runtime: {}, activeId: null })))
+    expect(document.activeElement).toBe(screen.getByRole('main'))
+  })
+
+  test('an account removed elsewhere doesn’t steal focus from where it is', () => {
+    show()
+    const outside = screen.getByRole('button', { name: 'outside' })
+    outside.focus()
+    act(() => {
+      const s = snapshot()
+      useUi.getState().setSnap({ ...s, accounts: s.accounts.filter((a) => a.id !== 'c') })
+    })
+    expect(document.activeElement).toBe(outside)
   })
 
   test('in recovery mode, items that change settings are disabled and do nothing', async () => {

@@ -9,7 +9,7 @@ import {
 } from 'react'
 import type { AccountRuntime } from '../../shared/types'
 import { call } from '../api'
-import { accountTile } from '../focus'
+import { accountTile, activeTile, focusFirst, mainRegion } from '../focus'
 import { DiwanMark, Icon } from '../icons'
 import { useUi } from '../state'
 import { Kbd } from '../ui/Kbd'
@@ -74,6 +74,21 @@ export function Rail() {
     setAnnouncement(`${accounts[i].name} moved to position ${i + 1} of ${accounts.length}`)
   }, [order])
 
+  // A removed account takes its tile, and the focus on it, with it (say, after Remove in its menu):
+  // focus moves to the tile that took its place, else the one before, else the active tile, else
+  // the main region; never <body>. Only when focus was actually lost, so nothing is stolen.
+  const lastIds = useRef<string[]>([])
+  useLayoutEffect(() => {
+    const ids = order ? order.split('\n') : []
+    const before = lastIds.current
+    lastIds.current = ids
+    const gone = before.findIndex((id) => !ids.includes(id))
+    const el = document.activeElement
+    const lost = !el || el === document.body || !el.isConnected
+    if (gone < 0 || !lost) return
+    focusFirst([() => accountTile(ids[gone]), () => accountTile(ids[gone - 1]), activeTile, mainRegion])
+  }, [order])
+
   // Stable handlers, shared by every tile (AccountTile is memoised). They read the store directly
   // so they never need the render's snapshot.
   const onSelect = useCallback((id: string) => void call('account:activate', { id }), [])
@@ -85,7 +100,7 @@ export function Rail() {
       keyMenuAt.current = Number.NEGATIVE_INFINITY
       if (fromKeys || (e.clientX === 0 && e.clientY === 0)) {
         const r = e.currentTarget.getBoundingClientRect()
-        openMenu({ id, x: r.right + 8, y: r.top })
+        openMenu({ id, x: r.right + 8, y: r.top, flipY: r.bottom })
       } else {
         openMenu({ id, x: e.clientX, y: e.clientY })
       }

@@ -24,10 +24,19 @@ export interface MenuItem {
 }
 
 // Where a menu of size w×h opened at (x, y) goes so it stays inside a vw×vh window: shifted left
-// at the right edge, and opened upwards when there is no room below.
-export function placeMenu(x: number, y: number, w: number, h: number, vw: number, vh: number) {
+// at the right edge, and opened upwards when there is no room below, ending at `flipY` (the
+// anchor's bottom, for a menu beside a tile) or else at y (the pointer).
+export function placeMenu(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  vw: number,
+  vh: number,
+  flipY?: number,
+) {
   const left = Math.max(EDGE, Math.min(x, vw - w - EDGE))
-  const top = y + h <= vh - EDGE ? y : Math.max(EDGE, Math.min(y - h, vh - h - EDGE))
+  const top = y + h <= vh - EDGE ? y : Math.max(EDGE, Math.min((flipY ?? y) - h, vh - h - EDGE))
   return { left, top }
 }
 
@@ -82,7 +91,15 @@ export function AccountMenu() {
     const el = box.current
     if (!el) return
     const r = el.getBoundingClientRect()
-    const { left, top } = placeMenu(menu.x, menu.y, r.width, r.height, window.innerWidth, window.innerHeight)
+    const { left, top } = placeMenu(
+      menu.x,
+      menu.y,
+      r.width,
+      r.height,
+      window.innerWidth,
+      window.innerHeight,
+      menu.flipY,
+    )
     el.style.left = `${left}px`
     el.style.top = `${top}px`
   })
@@ -213,9 +230,15 @@ export function AccountMenu() {
   }
 
   return (
+    // A press on the header, a divider or the padding would move focus out of the menu (and so close
+    // it); only the items take focus.
+    // biome-ignore lint/a11y/noStaticElementInteractions: keeps focus in the menu; not an action
     <div
       ref={box}
       data-testid="account-menu"
+      onMouseDown={(e) => {
+        if (!(e.target as Element).closest('[role="menuitem"]')) e.preventDefault()
+      }}
       style={{ left: menu.x, top: menu.y, maxHeight: `calc(100vh - ${2 * EDGE}px)` }}
       className="no-drag fixed z-50 flex w-[228px] flex-col overflow-y-auto rounded-xl border border-line-strong bg-bg-4 p-1.5 shadow-[0_16px_40px_rgb(0_0_0/0.5)]"
     >
