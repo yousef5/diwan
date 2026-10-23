@@ -20,7 +20,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.9
@@ -33,7 +33,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.9
@@ -44,12 +44,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.3.9
-      - name: Install Xvfb and D-Bus
-        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb dbus
+      # libnotify: Electron's Linux notifications need it (the deb depends on it; the runner lacks it).
+      - name: Install Xvfb, D-Bus and libnotify
+        run: sudo apt-get update -q && sudo apt-get install -y -q xvfb dbus libnotify4
       # Ubuntu 24.04's AppArmor blocks unprivileged user namespaces, so Chromium's sandbox can't start
       # from node_modules (no SUID chrome-sandbox there). Lift that on the throwaway runner instead of
       # running the tests with --no-sandbox.
@@ -62,7 +63,7 @@ jobs:
       - run: bunx install-electron --no
       - run: bun run e2e
       - if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: e2e-traces
           path: test-results/

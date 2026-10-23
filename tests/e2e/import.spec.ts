@@ -43,9 +43,11 @@ function writeNexus(accounts: { id: string; name: string }[]): void {
 async function startNexus(): Promise<void> {
   const bin = join(profile.root, 'bin')
   mkdirSync(bin, { recursive: true })
-  // `sleep` run through a link named nexus: the kernel names the process after the link
+  // `sleep` run through a link named nexus: the kernel names the process after the link. argv[0]
+  // stays "sleep" for multi-call coreutils (uutils on Ubuntu 26.04, busybox), which pick the
+  // utility by argv[0] and would refuse to run as "nexus".
   symlinkSync('/usr/bin/sleep', join(bin, 'nexus'))
-  fakeNexus = spawn(join(bin, 'nexus'), ['300'], { stdio: 'ignore' })
+  fakeNexus = spawn(join(bin, 'nexus'), ['300'], { stdio: 'ignore', argv0: 'sleep' })
   await new Promise((resolve, reject) => fakeNexus?.once('spawn', resolve).once('error', reject))
   symlinkSync(`${hostname()}-${fakeNexus.pid}`, join(nexusData(), 'SingletonLock'))
 }
