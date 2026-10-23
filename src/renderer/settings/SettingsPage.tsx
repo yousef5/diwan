@@ -429,7 +429,7 @@ function Data({ snap }: { snap: Snapshot }) {
               ? 'Not while the settings file is damaged.'
               : importAvailable
                 ? 'Moves your Nexus accounts across, already signed in.'
-                : 'Nexus wasn’t found on this computer, or its accounts are already in Diwan.'
+                : 'Nexus wasn’t found on this computer, or it has nothing left to import.'
           }
           control={(hintId) => (
             <Button

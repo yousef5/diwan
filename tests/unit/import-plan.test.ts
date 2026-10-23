@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest'
-import { type PlanDeps, planForApply, planImport } from '../../src/main/importer/plan'
+import { hasImportable, type PlanDeps, planForApply, planImport } from '../../src/main/importer/plan'
 import { ACCOUNT_COLORS } from '../../src/shared/palette'
 
 const paths = {
@@ -162,5 +162,32 @@ describe('planForApply (the re-plan right before copying)', () => {
     expect(planForApply(all)).toBe(all)
     const plan = planImport(paths, deps(cfg([{ id: 'aaa', name: 'A' }]), ['wa-aaa']))
     expect(planForApply(plan)).toBe(plan)
+  })
+})
+
+describe('hasImportable', () => {
+  const two = cfg([
+    { id: 'aaa', name: 'One', order: 0 },
+    { id: 'bbb', name: 'Two', order: 1 },
+  ])
+
+  test('no Nexus, a damaged file, or no signed-in accounts: nothing to offer', () => {
+    expect(hasImportable(paths, deps(null, []))).toBe(false)
+    expect(hasImportable(paths, deps('{oops', ['wa-aaa']))).toBe(false)
+    expect(hasImportable(paths, deps(two, []))).toBe(false)
+    expect(hasImportable(paths, deps(two, ['wa-old', 'other']))).toBe(false)
+  })
+
+  test('an account with a session folder that is not in Diwan yet', () => {
+    expect(hasImportable(paths, deps(two, ['wa-bbb']))).toBe(true)
+    expect(hasImportable(paths, deps(two, ['wa-aaa', 'wa-bbb']), new Set(['aaa']))).toBe(true)
+    expect(hasImportable(paths, deps(two, ['wa-aaa', 'wa-bbb']), new Set(['aaa', 'bbb']))).toBe(false)
+  })
+
+  test('never measures folder sizes', () => {
+    let measured = 0
+    const d: PlanDeps = { ...deps(two, ['wa-aaa', 'wa-bbb']), dirSize: () => ++measured }
+    expect(hasImportable(paths, d)).toBe(true)
+    expect(measured).toBe(0)
   })
 })

@@ -29,7 +29,9 @@ export interface TrayBadgeDeps {
 
 // show(total) on every snapshot. Cheap when nothing changed: the same badge key as last time
 // returns at once, and a key whose image main already has is never drawn or sent again. A failed
-// send forgets the key, so the next change to it tries again (not every snapshot: no retry storm).
+// send forgets the key, and if the total still maps to it, forgets that it was last too: the next
+// snapshot tries once more (one try per snapshot, never a loop), so a badge that failed while the
+// total moved onto it isn't missing until the total changes again.
 export function createTrayBadges(d: TrayBadgeDeps): { show(total: number): Promise<void> } {
   const sent = new Set<BadgeKey>()
   let last: BadgeKey | null = null
@@ -48,7 +50,10 @@ export function createTrayBadges(d: TrayBadgeDeps): { show(total: number): Promi
       } catch {
         ok = false
       }
-      if (!ok) sent.delete(key)
+      if (!ok) {
+        sent.delete(key)
+        if (last === key) last = null
+      }
     },
   }
 }

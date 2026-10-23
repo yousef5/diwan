@@ -1,4 +1,3 @@
-import { existsSync } from 'node:fs'
 import { lstat, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app, BrowserWindow, dialog, Menu, screen, session } from 'electron'
@@ -12,7 +11,7 @@ import { sweepStaleDownloadParts } from './downloads'
 import { applyGuestPreferences, isAllowedGuest, partitionOf } from './guest-config'
 import { resetCrashes, wireGuest } from './guests'
 import { applyImport, fsPlanDeps, nexusRunning, sweepPartials } from './importer/apply'
-import { planForApply, planImport } from './importer/plan'
+import { hasImportable, planForApply, planImport } from './importer/plan'
 import { forgetAvatar, registerGuestIpc } from './ipc-guest'
 import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
@@ -41,13 +40,17 @@ function start(): void {
   const store = new Store(paths.userData, 300, (e) => log.error('saving settings failed (will retry)', e))
   if (store.recovery) log.error('settings file is damaged; running in recovery mode')
   const hub = new StateHub(store, (e) => log.error('a state listener failed', e))
-  hub.importAvailable = !store.get().importedFromNexus && existsSync(paths.nexusConfig)
-  hub.notify()
-  const registry = new Registry()
-  const avatars = new AvatarFiles(paths.avatars)
   const nexusPartitions = join(paths.nexusUserData, 'Partitions')
   const importedSources = () =>
     new Set(hub.accounts().flatMap((a) => (a.importedFrom ? [a.importedFrom] : [])))
+  // Offered only when Nexus has an account that can actually be imported (installed is not enough:
+  // it may have no signed-in accounts, or only ones already in Diwan).
+  hub.importAvailable =
+    !store.get().importedFromNexus &&
+    hasImportable({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources())
+  hub.notify()
+  const registry = new Registry()
+  const avatars = new AvatarFiles(paths.avatars)
   // A crash during an import leaves acc-<id>.partial folders that no account uses.
   void sweepPartials(paths.partitions).catch((e) => log.warn('could not sweep partial imports', e))
   sweepStaleDownloadParts(paths.downloads) // synchronous; handles its own errors

@@ -82,8 +82,6 @@ describe('createTrayBadges', () => {
     let ok = false
     const { badges, deps } = harness({ send: async () => ok })
     await badges.show(4)
-    await badges.show(4) // still the same count: no retry storm
-    expect(deps.send).toHaveBeenCalledTimes(1)
     ok = true
     await badges.show(0)
     await badges.show(4)
@@ -91,6 +89,44 @@ describe('createTrayBadges', () => {
     await badges.show(0)
     await badges.show(4)
     expect(deps.send).toHaveBeenCalledTimes(3)
+  })
+
+  test('a refused image gets one more try on the next snapshot with the same total', async () => {
+    let ok = false
+    const { badges, deps } = harness({ send: async () => ok })
+    await badges.show(4) // the total moved onto 4 and the send failed
+    expect(deps.send).toHaveBeenCalledTimes(1)
+    await badges.show(4) // next snapshot, same total: one more try (still refused)
+    expect(deps.send).toHaveBeenCalledTimes(2)
+    ok = true
+    await badges.show(4) // and the next one gets it through
+    expect(deps.send).toHaveBeenCalledTimes(3)
+    // once main has it, the same total costs nothing again
+    await badges.show(4)
+    await badges.show(5)
+    await badges.show(4)
+    expect(deps.paint.mock.calls.map(([k]) => k)).toEqual(['4', '4', '4', '5'])
+  })
+
+  test('a failure for a key the total already left does not reset the newer key', async () => {
+    let release: (ok: boolean) => void = () => {}
+    const sends: string[] = []
+    const badges = createTrayBadges({
+      ready: async () => {},
+      paint: (k) => `data:${k}`,
+      send: (images) => {
+        sends.push(Object.keys(images).join())
+        return Object.keys(images)[0] === '3'
+          ? new Promise<boolean>((r) => (release = r))
+          : Promise.resolve(true)
+      },
+    })
+    const first = badges.show(3)
+    await badges.show(5) // the total moved on while 3 was being sent
+    release(false)
+    await first
+    await badges.show(5) // 5 is still the last key and main has it: nothing to do
+    expect(sends).toEqual(['3', '5'])
   })
 
   test('no canvas: nothing is sent, and nothing is remembered as sent', async () => {

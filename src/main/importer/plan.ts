@@ -70,3 +70,14 @@ export function planForApply(plan: ImportPlan): ImportPlan {
     throw new Error(plan.reason ?? 'Nothing to import')
   return plan
 }
+
+// Whether Nexus has anything to import right now: at least one account with a session folder that
+// isn't in Diwan yet. What the startup offer and the snapshot's importAvailable mean. Only reads
+// Nexus's account list and folder names (no folder sizes), so it is cheap enough for startup.
+export function hasImportable(
+  paths: { nexusConfig: string; nexusPartitions: string },
+  deps: PlanDeps,
+  alreadyImported: ReadonlySet<string> = new Set(),
+): boolean {
+  return planImport(paths, { ...deps, dirSize: () => 0 }, alreadyImported).available
+}
