@@ -44,6 +44,7 @@
   --color-accent-softer: #bfdbfe; /* link hover */
   --color-danger: #ef4444; /* icons, borders, error text */
   --color-danger-strong: #dc2626; /* filled danger buttons: 4.8:1 with white */
+  --color-danger-soft: #f87171; /* danger text on menus and dialogs: 5.4:1 on bg-4, 4.9:1 on bg-5 */
   --color-warn: #f59e0b; /* offline */
   --color-ok: #22c55e; /* connected */
   /* Keyboard focus. Not the accent: accent already means "active" (the active rail tile's ring,

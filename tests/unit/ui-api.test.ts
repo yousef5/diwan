@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { call } from '../../src/renderer/api'
+import { attempt, call } from '../../src/renderer/api'
 import { useUi } from '../../src/renderer/state'
 
 const initial = useUi.getState()
@@ -46,6 +46,28 @@ describe('call', () => {
     })
     await expect(call('window:minimize')).resolves.toBeUndefined()
     expect(useUi.getState().toasts.map((t) => t.text)).toEqual(['bridge gone'])
+  })
+})
+
+describe('attempt', () => {
+  test('ok with the result', async () => {
+    invoke.mockResolvedValue({ imported: ['A'], failed: [] })
+    await expect(attempt('importer:apply')).resolves.toEqual({
+      ok: true,
+      value: { imported: ['A'], failed: [] },
+    })
+    expect(invoke).toHaveBeenCalledWith('importer:apply', undefined)
+  })
+
+  test('a failure comes back with the clean message, and no toast', async () => {
+    invoke.mockRejectedValue(
+      new Error("Error invoking remote method 'importer:apply': Error: Quit Nexus first, then import again."),
+    )
+    await expect(attempt('importer:apply')).resolves.toEqual({
+      ok: false,
+      error: 'Quit Nexus first, then import again.',
+    })
+    expect(useUi.getState().toasts).toEqual([])
   })
 })
 

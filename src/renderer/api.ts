@@ -15,3 +15,17 @@ export async function call<C extends ShellChannel>(
     return undefined
   }
 }
+
+export type Attempt<T> = { ok: true; value: T } | { ok: false; error: string }
+
+// Like `call`, but the caller shows the failure itself (say, inline in a dialog), so no toast.
+export async function attempt<C extends ShellChannel>(
+  channel: C,
+  payload?: ShellPayload<C>,
+): Promise<Attempt<ShellResult<C>>> {
+  try {
+    return { ok: true, value: await window.diwan.invoke(channel, payload) }
+  } catch (e) {
+    return { ok: false, error: cleanError(e) }
+  }
+}
