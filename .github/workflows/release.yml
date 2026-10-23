@@ -1,6 +1,6 @@
 # On a v* tag: build and smoke-test every package (package.yml), then attach them plus SHA256SUMS to a
 # DRAFT GitHub Release. Nothing is ever published automatically: Joe reviews the draft and publishes it.
-# Run by hand (workflow_dispatch) it only builds and checksums, as a dry run: no release is made.
+# Run by hand (workflow_dispatch) on a branch it only builds and checksums, as a dry run: no release is made.
 name: release
 on:
   push:
@@ -51,20 +51,24 @@ jobs:
           cat SHA256SUMS
           ls -l
       - name: Upload the dry-run result
-        if: github.ref_type != 'tag'
+        if: github.event_name != 'push'
         uses: actions/upload-artifact@v7
         with:
           name: diwan-release-dry-run
           path: dist/
           compression-level: 0
       - name: Create the draft release
-        if: github.ref_type == 'tag'
+        if: github.event_name == 'push' && github.ref_type == 'tag'
         working-directory: dist
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "::error::a release for $TAG already exists; delete the old draft first"
+            exit 1
+          fi
           gh release create "$TAG" --draft --verify-tag --title "Diwan ${TAG#v}" \
             --notes "Draft built by CI from $TAG. Check the files, add the notes, then publish." \
             Diwan-* SHA256SUMS
