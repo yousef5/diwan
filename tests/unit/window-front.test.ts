@@ -33,3 +33,14 @@ test('Linux: shown and focused, no always-on-top dance', () => {
   expect(w.calls).toEqual(['show', 'focus'])
   expect(focusApp).not.toHaveBeenCalled()
 })
+
+test('Windows: a throwing focus() never leaves the window always-on-top', () => {
+  const w = fakeWin()
+  w.focus = () => {
+    w.calls.push('focus')
+    throw new Error('gone')
+  }
+  expect(() => bringToFront(w, 'win32', vi.fn())).toThrow('gone')
+  expect(w.calls).toEqual(['show', 'top true', 'focus', 'top false'])
+  expect(w.isAlwaysOnTop()).toBe(false)
+})

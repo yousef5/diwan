@@ -151,5 +151,7 @@ module.exports = {
     deleteAppDataOnUninstall: false,
     createStartMenuShortcut: true,
     shortcutName: 'Diwan',
+    // customUnInstall: removes the whatsapp: handler, but only when it runs this install's Diwan.exe.
+    include: 'resources/installer.nsh',
   },
 }

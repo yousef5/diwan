@@ -84,6 +84,30 @@ jobs:
           if ($p.HasExited) { throw "Diwan exited early with code $($p.ExitCode)" }
           Get-Process -Name diwan -ErrorAction SilentlyContinue | Stop-Process -Force
           if (-not (Select-String -Path $log -Pattern 'Diwan started' -Quiet)) { throw 'no "Diwan started" in the log' }
+      - name: Uninstall removes only Diwan's own whatsapp handler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'diwan-install'
+          $key = 'HKCU:\Software\Classes\whatsapp\shell\open\command'
+          $uninstall = Get-ChildItem $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          # What Electron's setAsDefaultProtocolClient writes when the Settings switch is on.
+          New-Item -Path $key -Force | Out-Null
+          Set-Item -Path $key -Value "`"$dir\Diwan.exe`" `"--`" `"%1`""
+          # A copy of the installed files: the uninstaller with _?= runs in place, so the same
+          # install can be uninstalled twice (once with our handler, once with a foreign one).
+          $copy = Join-Path $env:RUNNER_TEMP 'diwan-install-copy'
+          Copy-Item $dir $copy -Recurse
+          Start-Process -FilePath $uninstall.FullName -ArgumentList '/S', "_?=$dir" -Wait
+          if (Test-Path 'HKCU:\Software\Classes\whatsapp') { throw 'our whatsapp handler was left behind' }
+          # Another app's handler must survive an uninstall.
+          New-Item -Path $key -Force | Out-Null
+          Set-Item -Path $key -Value '"C:\Program Files\WhatsApp\WhatsApp.exe" "%1"'
+          $uninstall2 = Get-ChildItem $copy -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process -FilePath $uninstall2.FullName -ArgumentList '/S', "_?=$copy" -Wait
+          if (-not (Test-Path $key)) { throw 'a foreign whatsapp handler was deleted' }
+          Remove-Item 'HKCU:\Software\Classes\whatsapp' -Recurse
+          Write-Host 'uninstall: own handler removed, foreign handler kept'
       - uses: actions/upload-artifact@v7
         with:
           name: diwan-windows

@@ -510,6 +510,7 @@ describe('data and about', () => {
     await user.click(s)
     expect(invoke).toHaveBeenCalledWith('protocol:setWhatsapp', { enabled: true })
     expect(screen.queryByText(/xdg-mime/)).toBeNull()
+    expect(page().textContent).toContain('choose Diwan in Windows Settings → Default apps')
     setSnap({ platform: 'win32', whatsappHandler: true })
     expect(sw('Open whatsapp: links in Diwan').getAttribute('aria-checked')).toBe('true')
   })

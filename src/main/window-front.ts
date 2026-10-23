@@ -19,8 +19,11 @@ export function bringToFront(w: FrontWindow, platform: Platform, focusApp: () =>
   w.show()
   if (platform === 'win32' && !w.isAlwaysOnTop()) {
     w.setAlwaysOnTop(true)
-    w.focus()
-    w.setAlwaysOnTop(false)
+    try {
+      w.focus()
+    } finally {
+      w.setAlwaysOnTop(false) // even when focus() throws: never leave the window stuck on top
+    }
   } else w.focus()
   if (platform === 'win32') focusApp()
 }

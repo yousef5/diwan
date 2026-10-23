@@ -269,7 +269,9 @@ function WhatsappLinks({ snap }: { snap: Snapshot }) {
       <Group label="Links">
         <ToggleRow
           title="Open whatsapp: links in Diwan"
-          hint={hint}
+          // The switch reads Diwan's own registration; a default picked in Windows Settings (e.g.
+          // WhatsApp Desktop's, a UserChoice) still wins over it and Electron can't see that.
+          hint={`${hint} If WhatsApp Desktop still opens links, choose Diwan in Windows Settings → Default apps.`}
           checked={snap.whatsappHandler === true}
           onChange={(v) => void call('protocol:setWhatsapp', { enabled: v })}
         />
