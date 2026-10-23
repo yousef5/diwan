@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Account, AccountRuntime, ShellCommand, Snapshot } from '../../src/shared/types'
 
 const show = vi.fn(async (_total: number) => {})
-vi.mock('../../src/renderer/trayBadges', () => ({ trayBadges: () => ({ show }) }))
+const overlayShow = vi.fn(async (_total: number) => {})
+vi.mock('../../src/renderer/trayBadges', () => ({
+  trayBadges: () => ({ show }),
+  overlayBadges: () => ({ show: overlayShow }),
+}))
 
 const { App } = await import('../../src/renderer/App')
 const { useUi } = await import('../../src/renderer/state')
@@ -49,6 +53,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     importAvailable: false,
     trayAvailable: true,
     platform: 'linux',
+    whatsappHandler: null,
     dataDir: '/home/u/.config/Diwan',
     ...over,
   }
@@ -91,6 +96,7 @@ beforeEach(() => {
   stateListeners = []
   commandListeners = []
   show.mockClear()
+  overlayShow.mockClear()
   replies = new Promise<Snapshot>((r) => {
     reply = r
   })
@@ -300,5 +306,19 @@ describe('App: tray badge', () => {
     act(() => useUi.getState().openSettings())
     act(() => useUi.getState().toast('hello'))
     expect(show).toHaveBeenCalledTimes(1)
+  })
+
+  test('the Windows taskbar overlay follows the same total, even without a tray', async () => {
+    render(<App />)
+    await answer(snapshot({ platform: 'win32', trayAvailable: false }))
+    expect(overlayShow).toHaveBeenLastCalledWith(2)
+    push(snapshot({ platform: 'win32', runtime: { [A]: rt({ unread: 0 }), [B]: rt({ unread: 5 }) } }))
+    expect(overlayShow).toHaveBeenLastCalledWith(0)
+  })
+
+  test('no taskbar overlay off Windows', async () => {
+    render(<App />)
+    await answer(snapshot())
+    expect(overlayShow).not.toHaveBeenCalled()
   })
 })

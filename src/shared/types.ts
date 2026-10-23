@@ -44,6 +44,8 @@ export interface DiwanFile {
   settings: Settings
   // Ids of removed accounts whose Partitions/acc-<id> folder is deleted again at the next start.
   pendingFolderRemovals: string[]
+  // The one-time "Diwan is still running" notice (first close to the tray) was shown.
+  trayNoticeShown: boolean
 }
 
 export type ViewState = 'loading' | 'ready' | 'offline' | 'failed' | 'hung' | 'loggingOut'
@@ -65,6 +67,9 @@ export interface Snapshot {
   importAvailable: boolean
   trayAvailable: boolean
   platform: Platform
+  // Windows: whether Diwan opens whatsapp: links (the registry handler points at it). null elsewhere:
+  // Linux sets the handler with xdg-mime, outside the app.
+  whatsappHandler: boolean | null
   dataDir: string // the settings/profile folder, shown as-is
 }
 

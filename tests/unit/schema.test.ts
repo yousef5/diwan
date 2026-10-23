@@ -14,6 +14,7 @@ describe('parseDiwanFile', () => {
       accounts: [],
       settings: DEFAULT_SETTINGS,
       pendingFolderRemovals: [],
+      trayNoticeShown: false,
     })
   })
 
@@ -139,6 +140,11 @@ describe('parseDiwanFile', () => {
       expect(parse({ pendingFolderRemovals: 'x' }).pendingFolderRemovals).toEqual([])
       expect(parse({ pendingFolderRemovals: [id1, '../etc'] }).pendingFolderRemovals).toEqual([])
       expect(parse({ pendingFolderRemovals: [id1, id2, id1] }).pendingFolderRemovals).toEqual([id1, id2])
+    })
+    test('trayNoticeShown: absent (an older file) is false, damaged counts as shown', () => {
+      expect(parse({}).trayNoticeShown).toBe(false)
+      expect(parse({ trayNoticeShown: true }).trayNoticeShown).toBe(true)
+      expect(parse({ trayNoticeShown: 'x' }).trayNoticeShown).toBe(true)
     })
     test('repaired name has no trailing space', () => {
       const f = parse({ accounts: [{ id: id1, name: `${'x'.repeat(39)} yy`, color: '#3b82f6', order: 0 }] })

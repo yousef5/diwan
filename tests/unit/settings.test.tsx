@@ -44,6 +44,7 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     importAvailable: true,
     trayAvailable: true,
     platform: 'linux',
+    whatsappHandler: null,
     dataDir: '/home/u/.config/Diwan',
     ...over,
   }
@@ -499,6 +500,31 @@ describe('data and about', () => {
     cleanup()
     openAt('notifications')
     expect(page().textContent).toContain('Highlights Diwan’s workspace in the bar')
+  })
+
+  test('Windows: the whatsapp: links switch shows the registry state and asks main to change it', async () => {
+    const user = userEvent.setup()
+    openAt('general', { platform: 'win32', whatsappHandler: false })
+    const s = sw('Open whatsapp: links in Diwan')
+    expect(s.getAttribute('aria-checked')).toBe('false')
+    await user.click(s)
+    expect(invoke).toHaveBeenCalledWith('protocol:setWhatsapp', { enabled: true })
+    expect(screen.queryByText(/xdg-mime/)).toBeNull()
+    setSnap({ platform: 'win32', whatsappHandler: true })
+    expect(sw('Open whatsapp: links in Diwan').getAttribute('aria-checked')).toBe('true')
+  })
+
+  test('Windows: the links switch works in recovery mode (it is not in the settings file)', () => {
+    openAt('general', { platform: 'win32', whatsappHandler: false, recovery: true })
+    expect((sw('Open whatsapp: links in Diwan') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  test('Linux: no switch, the xdg-mime command to run instead', () => {
+    openAt('general')
+    expect(screen.queryByRole('switch', { name: 'Open whatsapp: links in Diwan' })).toBeNull()
+    expect(screen.getByText('Open whatsapp: links in Diwan')).toBeTruthy()
+    const cmd = screen.getByText('xdg-mime default diwan.desktop x-scheme-handler/whatsapp')
+    expect(cmd.getAttribute('dir')).toBe('ltr')
   })
 
   test('About shows the version and opens the folder with the logs', async () => {

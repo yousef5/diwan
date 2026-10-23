@@ -1,4 +1,5 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { XDG_MIME_COMMAND } from '../../shared/protocol'
 import type { Account, SettingsPatch, Snapshot } from '../../shared/types'
 import { call } from '../api'
 import { START_FRESH } from '../components/RecoveryBanner'
@@ -253,7 +254,46 @@ function General({ snap }: { snap: Snapshot }) {
           />
         )}
       </Group>
+      <WhatsappLinks snap={snap} />
     </>
+  )
+}
+
+// Opt-in only: Diwan never makes itself the whatsapp: handler on its own. On Windows the switch
+// shows what the registry says (main reads it into the snapshot); on Linux the user runs xdg-mime.
+// It doesn't touch the settings file, so it works in recovery mode too.
+function WhatsappLinks({ snap }: { snap: Snapshot }) {
+  const hint = 'Chat links in your browser and other apps (whatsapp://send?phone=…) open here.'
+  if (snap.platform === 'win32')
+    return (
+      <Group label="Links">
+        <ToggleRow
+          title="Open whatsapp: links in Diwan"
+          hint={hint}
+          checked={snap.whatsappHandler === true}
+          onChange={(v) => void call('protocol:setWhatsapp', { enabled: v })}
+        />
+      </Group>
+    )
+  if (snap.platform !== 'linux') return null
+  return (
+    <Group label="Links">
+      <Row
+        title="Open whatsapp: links in Diwan"
+        hint={
+          <>
+            {hint} To turn it on, run this in a terminal:{' '}
+            <code
+              dir="ltr"
+              className="mt-1.5 block rounded-md bg-bg-3 px-2 py-1.5 font-mono text-[12px] break-all text-fg select-all"
+            >
+              {XDG_MIME_COMMAND}
+            </code>
+          </>
+        }
+        control={() => null}
+      />
+    </Group>
   )
 }
 

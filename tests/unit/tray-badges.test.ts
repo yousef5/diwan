@@ -1,8 +1,15 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, test, vi } from 'vitest'
-import { BADGE_SIZE, badgeLabel, createTrayBadges, paintTrayBadge } from '../../src/renderer/trayBadges'
+import {
+  BADGE_SIZE,
+  badgeLabel,
+  createTrayBadges,
+  OVERLAY_SIZE,
+  paintOverlayBadge,
+  paintTrayBadge,
+} from '../../src/renderer/trayBadges'
 import { shellChannels } from '../../src/shared/ipc'
-import type { BadgeKey } from '../../src/shared/unread'
+import type { BadgeKey, OverlayKey } from '../../src/shared/unread'
 import { pngHeader, url } from './helpers/images'
 
 afterEach(() => {
@@ -197,5 +204,42 @@ describe('paintTrayBadge', () => {
   test('a badge-sized PNG is what tray:setBadges accepts', () => {
     const png = url('png', pngHeader(BADGE_SIZE, BADGE_SIZE))
     expect(shellChannels['tray:setBadges'].safeParse({ none: png, '9+': png }).success).toBe(true)
+  })
+})
+
+describe('taskbar overlay badges', () => {
+  function overlayHarness() {
+    const deps = {
+      ready: vi.fn(async () => {}),
+      paint: vi.fn((k: OverlayKey) => `data:image/png;base64,${k}`),
+      send: vi.fn(async (_images: Partial<Record<OverlayKey, string>>) => true),
+      drawn: (k: BadgeKey): k is OverlayKey => k !== 'none',
+    }
+    return { badges: createTrayBadges<OverlayKey>(deps), deps }
+  }
+
+  test('0 draws nothing (main clears the overlay); each count key is drawn once', async () => {
+    const { badges, deps } = overlayHarness()
+    for (const n of [0, 3, 0, 3, 12, 40, 3]) await badges.show(n)
+    expect(deps.paint.mock.calls.map(([k]) => k)).toEqual(['3', '9+'])
+    expect(deps.send.mock.calls.map(([i]) => Object.keys(i))).toEqual([['3'], ['9+']])
+  })
+
+  test('a 16 px disc in accent-strong with white text, which taskbar:setBadges accepts', () => {
+    const calls = fakeCanvas()
+    expect(paintOverlayBadge('7')).toBe('data:image/png;base64,AAAA')
+    const text = calls.filter((c) => c[0] === 'fillText')
+    expect(text).toHaveLength(1)
+    expect(text[0][1]).toBe('7')
+    expect(text[0][4]).toMatchObject({ fillStyle: '#ffffff' })
+    expect(calls.filter((c) => c[0] === 'fill')).toHaveLength(1)
+    expect(calls.find((c) => c[0] === 'fill')?.[1]).toMatchObject({ fillStyle: '#2563eb' })
+    const png = url('png', pngHeader(OVERLAY_SIZE, OVERLAY_SIZE))
+    expect(shellChannels['taskbar:setBadges'].safeParse({ 7: png, '9+': png }).success).toBe(true)
+  })
+
+  test('no 2D context: null', () => {
+    vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockReturnValue(null)
+    expect(paintOverlayBadge('1')).toBeNull()
   })
 })

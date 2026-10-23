@@ -13,6 +13,7 @@ import { logoutAccount } from './logout'
 import type { Paths } from './paths'
 import type { Registry } from './registry'
 import type { StateHub } from './state'
+import type { TaskbarBadge } from './taskbar-badge'
 import type { TrayController } from './tray'
 
 export interface ShellIpcDeps {
@@ -20,6 +21,7 @@ export interface ShellIpcDeps {
   registry: Registry
   avatars: AvatarFiles
   tray: TrayController
+  taskbar: Pick<TaskbarBadge<unknown>, 'setImages'>
   paths: Paths
   log: Logger
   win(): BrowserWindow | null
@@ -30,6 +32,8 @@ export interface ShellIpcDeps {
   sendShell(cmd: ShellCommand): void
   planImport(): ImportPlan
   applyImport(): Promise<ImportResult>
+  // Turns the whatsapp: handler on or off (Windows; a no-op elsewhere) and updates the snapshot.
+  setWhatsappHandler(enabled: boolean): void
 }
 
 export function registerShellIpc(d: ShellIpcDeps): void {
@@ -137,6 +141,8 @@ export function registerShellIpc(d: ShellIpcDeps): void {
   })
 
   handle('tray:setBadges', (images) => d.tray.setBadges(images))
+  handle('taskbar:setBadges', (images) => d.taskbar.setImages(images))
+  handle('protocol:setWhatsapp', ({ enabled }) => d.setWhatsappHandler(enabled))
 
   handle('window:minimize', () => d.win()?.minimize())
   handle('window:toggleMaximize', () => {

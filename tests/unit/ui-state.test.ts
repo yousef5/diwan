@@ -31,6 +31,7 @@ const snap = (ids: string[]): Snapshot => ({
   importAvailable: false,
   trayAvailable: true,
   platform: 'linux',
+  whatsappHandler: null,
   dataDir: '/home/u/.config/Diwan',
 })
 

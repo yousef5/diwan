@@ -10,7 +10,7 @@ import { WindowControls } from './components/WindowControls'
 import { importOffered } from './platform'
 import { SettingsPage } from './settings/SettingsPage'
 import { useUi } from './state'
-import { trayBadges } from './trayBadges'
+import { overlayBadges, trayBadges } from './trayBadges'
 import { Toasts } from './ui/Toasts'
 
 // The first snapshot. Pushes are subscribed to before asking, so none is lost in between; and a
@@ -47,7 +47,8 @@ export function useAppCommands(): void {
   )
 }
 
-// The tray badge follows the unmuted unread total, through every snapshot (no re-render here).
+// The tray badge (and on Windows the taskbar overlay) follows the unmuted unread total, through
+// every snapshot (no re-render here).
 function useTrayBadges(): void {
   useEffect(() => {
     let lastSnap: unknown = null
@@ -55,7 +56,9 @@ function useTrayBadges(): void {
       const snap = useUi.getState().snap
       if (!snap || snap === lastSnap) return
       lastSnap = snap
-      if (snap.trayAvailable) void trayBadges().show(unreadTotal(snap.accounts, snap.runtime))
+      const total = unreadTotal(snap.accounts, snap.runtime)
+      if (snap.trayAvailable) void trayBadges().show(total)
+      if (snap.platform === 'win32') void overlayBadges().show(total)
     }
     sync()
     return useUi.subscribe(sync)

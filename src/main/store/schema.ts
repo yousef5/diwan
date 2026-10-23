@@ -93,6 +93,9 @@ const DiwanFileSchema = z.object({
   // Added within schema 1 (absent in older files, so it defaults like importedFromNexus). Damage drops
   // the whole list: a lost tombstone only leaves a leftover folder, never deletes one.
   pendingFolderRemovals: z.array(AccountId).catch([]),
+  // Added within schema 1 (absent in older files, so the notice shows once after the upgrade). A
+  // damaged value counts as shown: never nag twice.
+  trayNoticeShown: z.boolean().default(false).catch(true),
 })
 
 // Validates, fills defaults, drops unknown keys and duplicate ids, sorts by order, re-indexes.

@@ -41,6 +41,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   importAvailable = false
   trayAvailable = true
   platform: Platform = platformOf()
+  whatsappHandler: boolean | null = null
   dataDir: string
   private runtime = new Map<string, AccountRuntime>()
   private activeId: string | null
@@ -93,6 +94,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
       importAvailable: this.importAvailable,
       trayAvailable: this.trayAvailable,
       platform: this.platform,
+      whatsappHandler: this.whatsappHandler,
       dataDir: this.dataDir,
     }
   }
@@ -294,6 +296,19 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     )
       return
     this.importAvailable = false
+    this.persistNow()
+  }
+
+  trayNoticeShown(): boolean {
+    return this.store.get().trayNoticeShown
+  }
+
+  // Written at once, without a snapshot push: the shell never shows this flag.
+  markTrayNoticeShown(): void {
+    if (this.store.recovery || this.trayNoticeShown()) return
+    this.store.update((f) => {
+      f.trayNoticeShown = true
+    })
     this.persistNow()
   }
 

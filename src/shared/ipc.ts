@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { dataUrlFits } from './image-dims'
 import { NID_PATTERN } from './nid'
 import type { Account, ImportPlan, ImportResult, Snapshot } from './types'
-import { BADGE_KEYS } from './unread'
+import { BADGE_KEYS, OVERLAY_KEYS } from './unread'
 import { HexColor as Color, AccountId as Id, AccountName as Name } from './validators'
 
 const None = z.undefined()
@@ -14,6 +14,12 @@ const PngDataUrl = z
   .max(200_000, { abort: true })
   .startsWith('data:image/png;base64,')
   .refine(sized(64, 64), 'bad or oversized image')
+// The Windows taskbar overlay is a 16 px image.
+const OverlayDataUrl = z
+  .string()
+  .max(50_000, { abort: true })
+  .startsWith('data:image/png;base64,')
+  .refine(sized(16, 16), 'bad or oversized image')
 const defined = <T extends object>(o: T) =>
   Object.fromEntries(Object.entries(o).filter(([, v]) => v !== undefined)) as T
 const anyDefined = (o: Record<string, unknown>) => Object.values(o).some((v) => v !== undefined)
@@ -70,6 +76,8 @@ export const shellChannels = {
   'app:openDataFolder': None,
   'app:startFresh': None,
   'tray:setBadges': z.partialRecord(z.enum(BADGE_KEYS), PngDataUrl),
+  'taskbar:setBadges': z.partialRecord(z.enum(OVERLAY_KEYS), OverlayDataUrl),
+  'protocol:setWhatsapp': z.object({ enabled: z.boolean() }),
   'window:minimize': None,
   'window:toggleMaximize': None,
   'window:close': None,
