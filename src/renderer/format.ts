@@ -6,8 +6,17 @@
 const graphemes = new Intl.Segmenter(undefined, { granularity: 'grapheme' })
 const chars = (word: string) => Array.from(graphemes.segment(word), (s) => s.segment)
 
+// The Arabic article "ال" (with any harakat on it) says nothing about a name: "العائلة" gives "عا",
+// not the "ال" every such name would start with. A word that is little more than the article
+// ("الف") keeps it.
+const ARTICLE = /^ال\p{M}*/u
+const stem = (word: string) => {
+  const rest = word.replace(ARTICLE, '')
+  return chars(rest).length >= 2 ? rest : word
+}
+
 export function initials(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean)
+  const words = name.trim().split(/\s+/).filter(Boolean).map(stem)
   if (words.length === 0) return '?'
   if (words.length === 1) return chars(words[0]).slice(0, 2).join('').toUpperCase()
   return (chars(words[0])[0] + chars(words[1])[0]).toUpperCase()

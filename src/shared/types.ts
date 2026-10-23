@@ -64,10 +64,9 @@ export interface Snapshot {
   trayAvailable: boolean
 }
 
-export type ShellCommand =
-  | { type: 'remount'; id: string }
-  | { type: 'reload'; id: string }
-  | { type: 'openSettings' }
+// main → shell. Each is handled in exactly one place: `remount` by Stage (useRemountCommands),
+// `openSettings` by App.
+export type ShellCommand = { type: 'remount'; id: string } | { type: 'openSettings' }
 
 export type SettingsPatch = Partial<Omit<Settings, 'notifications' | 'window'>> & {
   notifications?: Partial<NotificationSettings>

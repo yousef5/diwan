@@ -18,9 +18,24 @@ describe('format', () => {
   test('initials keep whole graphemes: Arabic harakat, ZWJ emoji, flags', () => {
     expect(initials('محمد')).toBe('مح')
     expect(initials('مُحمد')).toBe('مُح')
-    expect(initials('صيدلية الشفاء')).toBe('صا')
+    expect(initials('صيدلية الشفاء')).toBe('صش')
     expect(initials('👨‍👩‍👧 home')).toBe('👨‍👩‍👧H')
     expect(initials('🇪🇬🇸🇦')).toBe('🇪🇬🇸🇦')
+  })
+
+  test('initials skip the Arabic definite article', () => {
+    expect(initials('العائلة')).toBe('عا')
+    expect(initials('الشركة')).toBe('شر')
+    expect(initials('الْعائلة')).toBe('عا') // sukun on the lam
+    expect(initials('عبد الرحمن')).toBe('عر')
+    expect(initials('عبد الله')).toBe('عل')
+    expect(initials('العائلة الكبيرة')).toBe('عك')
+    // Not an article: the word is only "ال", or doesn't start with a bare alef + lam.
+    expect(initials('ال')).toBe('ال')
+    expect(initials('الف')).toBe('ال')
+    expect(initials('ال بيت')).toBe('اب')
+    expect(initials('إلهام')).toBe('إل')
+    expect(initials('Alex')).toBe('AL')
   })
 
   test('formatBytes', () => {
