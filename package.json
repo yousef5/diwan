@@ -4,6 +4,7 @@
   "version": "1.0.0",
   "private": true,
   "description": "Multi-account WhatsApp Web desktop client",
+  "homepage": "https://github.com/yousef5/diwan",
   "author": {
     "name": "yousef5",
     "email": "yousef5@users.noreply.github.com"
@@ -23,7 +24,10 @@
     "e2e": "electron-vite build && sh tests/e2e/run.sh",
     "package": "electron-vite build && electron-builder --linux dir --publish never",
     "package:arch": "bun run package && PKGDEST=\"$PWD/release\" BUILDDIR=\"$PWD/release/makepkg\" makepkg -f -C -D packaging",
-    "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never"
+    "package:linux": "electron-vite build && electron-builder --linux AppImage deb rpm --publish never",
+    "package:linux:norpm": "electron-vite build && electron-builder --linux AppImage deb --publish never",
+    "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never",
+    "package:win": "electron-vite build && electron-builder --win nsis --x64 --publish never"
   },
   "devDependencies": {
     "@biomejs/biome": "2.6.2",
