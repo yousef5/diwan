@@ -1,7 +1,17 @@
 import { call } from '../api'
 import { Icon } from '../icons'
-import { useUi } from '../state'
+import { type DialogState, useUi } from '../state'
 import { Button } from '../ui/Button'
+
+// The confirmation behind every "Start fresh" button (this banner, Settings → Data).
+export const START_FRESH: DialogState = {
+  kind: 'confirm',
+  title: 'Start with fresh settings?',
+  body: 'The damaged file is kept next to the new one (renamed .broken). Your accounts will need to be added or imported again.',
+  confirmLabel: 'Start fresh',
+  danger: false,
+  onConfirm: () => void call('app:startFresh'),
+}
 
 // Recovery mode: the settings file (and its backup) could not be read, so main runs read-only and
 // never overwrites it. Starting fresh keeps the damaged file next to the new one.
@@ -22,20 +32,7 @@ export function RecoveryBanner() {
       <Button variant="ghost" className="h-8 shrink-0" onClick={() => void call('app:openDataFolder')}>
         Open folder
       </Button>
-      <Button
-        variant="subtle"
-        className="h-8 shrink-0"
-        onClick={() =>
-          openDialog({
-            kind: 'confirm',
-            title: 'Start with fresh settings?',
-            body: 'The damaged file is kept next to the new one (renamed .broken). Your accounts will need to be added or imported again.',
-            confirmLabel: 'Start fresh',
-            danger: false,
-            onConfirm: () => void call('app:startFresh'),
-          })
-        }
-      >
+      <Button variant="subtle" className="h-8 shrink-0" onClick={() => openDialog(START_FRESH)}>
         Start fresh
       </Button>
     </div>

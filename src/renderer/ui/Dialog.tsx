@@ -1,20 +1,7 @@
-import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
-import { activeTile, focusFirst, mainRegion } from '../focus'
+import { type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { activeTile, focusables, focusFirst, mainRegion, trapTab } from '../focus'
 import { useUi } from '../state'
 import { useEscape } from './useEscape'
-
-const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
-
-// :disabled also catches controls inside a disabled <fieldset>; checkVisibility() catches
-// display:none and content-visibility from CSS (jsdom lacks it, hence the optional call).
-const focusables = (root: HTMLElement) =>
-  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) =>
-      !el.matches(':disabled') &&
-      !el.closest('[hidden], [inert], [aria-hidden="true"]') &&
-      el.checkVisibility?.() !== false,
-  )
 
 // A modal dialog. Focus moves in when it opens (to [data-autofocus], else the first control, else
 // the panel), Tab and Shift+Tab stay inside, Esc or a click on the backdrop closes it. Closing
@@ -65,25 +52,6 @@ export function Dialog({
     }
   }, [returnTo])
 
-  const trapTab = (e: KeyboardEvent<HTMLDivElement>) => {
-    if (e.key !== 'Tab' || !panel.current) return
-    const items = focusables(panel.current)
-    if (items.length === 0) {
-      e.preventDefault()
-      return
-    }
-    const first = items[0]
-    const last = items[items.length - 1]
-    const active = document.activeElement
-    if (e.shiftKey && (active === first || active === panel.current)) {
-      e.preventDefault()
-      last.focus()
-    } else if (!e.shiftKey && active === last) {
-      e.preventDefault()
-      first.focus()
-    }
-  }
-
   return (
     // The backdrop's mousedown is a pointer-only convenience; keyboards close with Esc (useEscape)
     // or the footer buttons.
@@ -101,7 +69,7 @@ export function Dialog({
         aria-labelledby={titleId}
         tabIndex={-1}
         style={{ width }}
-        onKeyDown={trapTab}
+        onKeyDown={(e) => panel.current && trapTab(e, panel.current)}
         className="flex max-h-full max-w-full flex-col rounded-2xl border border-line-strong bg-linear-to-b from-bg-3 to-bg-2 shadow-[0_24px_64px_rgb(0_0_0/0.55)] outline-none"
       >
         <h2 id={titleId} className="px-6 pt-5 text-[16px] font-semibold text-fg-strong">

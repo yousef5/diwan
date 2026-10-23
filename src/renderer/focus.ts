@@ -49,3 +49,42 @@ export function stageMayTakeFocus(blocked: boolean): boolean {
     return true // jsdom (tests) doesn't know :focus-visible
   }
 }
+
+const FOCUSABLE =
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
+// The controls inside `root` that Tab reaches, in document order. :disabled also catches controls
+// inside a disabled <fieldset>; checkVisibility() catches display:none and content-visibility from
+// CSS (jsdom lacks it, hence the optional call).
+export function focusables(root: HTMLElement): HTMLElement[] {
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) =>
+      !el.matches(':disabled') &&
+      !el.closest('[hidden], [inert], [aria-hidden="true"]') &&
+      el.checkVisibility?.() !== false,
+  )
+}
+
+// Keeps Tab and Shift+Tab inside a modal layer (`root`): the keydown handler of a dialog or of
+// the settings page. With nothing focusable, focus stays where it is.
+export function trapTab(
+  e: { key: string; shiftKey: boolean; preventDefault(): void },
+  root: HTMLElement,
+): void {
+  if (e.key !== 'Tab') return
+  const items = focusables(root)
+  if (items.length === 0) {
+    e.preventDefault()
+    return
+  }
+  const first = items[0]
+  const last = items[items.length - 1]
+  const active = document.activeElement
+  if (e.shiftKey && (active === first || active === root)) {
+    e.preventDefault()
+    last.focus()
+  } else if (!e.shiftKey && active === last) {
+    e.preventDefault()
+    first.focus()
+  }
+}
