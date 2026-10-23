@@ -218,7 +218,7 @@ export function ImportDialog() {
         {phase.at === 'loadFailed' && (
           <Notice tone="error">
             <p className="m-0">Diwan couldn’t read Nexus’s accounts: {phase.error}</p>
-            <Button variant="ghost" className="mt-2 h-8" onClick={recheck}>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={recheck}>
               Try again
             </Button>
           </Notice>
@@ -299,7 +299,7 @@ export function ImportDialog() {
               It is running, and copying a login it is using could sign that account out. Quit it (tray icon →
               Quit), then check again.
             </p>
-            <Button variant="ghost" className="mt-2 h-8" onClick={recheck}>
+            <Button variant="ghost" size="sm" className="mt-2" onClick={recheck}>
               Check again
             </Button>
           </Notice>

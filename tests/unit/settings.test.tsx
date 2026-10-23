@@ -102,7 +102,17 @@ describe('opening, closing and focus', () => {
     expect(screen.queryByRole('dialog')).toBeNull()
     act(() => useUi.getState().openSettings())
     expect(page().getAttribute('aria-modal')).toBe('true')
-    expect(page().className).toContain('fixed inset-0')
+    expect(page().className).toContain('fixed inset-x-0 bottom-0')
+    expect(page().className).toContain('top-0')
+  })
+
+  test('with window controls on, it starts below their bar, and its title row drags the window', () => {
+    setSnap({ settings: { ...SETTINGS, showWindowControls: true } })
+    render(<App />)
+    act(() => useUi.getState().openSettings())
+    expect(page().className).toContain('top-8')
+    expect(page().className).not.toContain('top-0')
+    expect(screen.getByRole('heading', { name: 'Settings' }).className).toContain('drag')
   })
 
   test('focus moves to the current section on open and back to the opener on close', async () => {
@@ -327,6 +337,26 @@ describe('layers over settings', () => {
     expect(useUi.getState().settingsOpen).toBe(false)
   })
 
+  test('opened under a dialog (Ctrl+,), it leaves focus and Tab in the dialog until that closes', async () => {
+    const user = userEvent.setup()
+    setSnap()
+    render(<App />)
+    act(() => useUi.getState().openDialog({ kind: 'edit', id: 'a' }))
+    const dialog = screen.getByRole('dialog', { name: 'Edit account' })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    const before = document.activeElement
+    act(() => useUi.getState().openSettings('general'))
+    expect(document.activeElement).toBe(before)
+    for (let i = 0; i < 12; i++) {
+      await user.tab()
+      expect(dialog.contains(document.activeElement)).toBe(true)
+    }
+    await user.tab({ shift: true })
+    expect(dialog.contains(document.activeElement)).toBe(true)
+    esc()
+    expect(page().contains(document.activeElement)).toBe(true)
+  })
+
   test('the account menu over settings takes Esc first and gives focus back to its button', async () => {
     const user = userEvent.setup()
     openAt('accounts')
@@ -387,6 +417,9 @@ describe('shortcuts', () => {
     expect(row('Next account').map((k) => k.textContent)).toEqual(['Ctrl Tab', 'Ctrl PgDn'])
     expect(row('Reload the account').map((k) => k.textContent)).toEqual(['Ctrl R', 'F5'])
     expect(row('Settings').map((k) => k.textContent)).toEqual(['Ctrl ,'])
+    // Esc works anywhere, so it is listed with the window's keys, not under the rail.
+    const esc = screen.getByText('Close Settings, a dialog or a menu', { selector: 'dt' })
+    expect(esc.closest('dl')?.getAttribute('aria-label')).toBe('Anywhere in Diwan')
     for (const k of page().querySelectorAll('dd kbd')) expect(k.getAttribute('dir')).toBe('ltr')
   })
 

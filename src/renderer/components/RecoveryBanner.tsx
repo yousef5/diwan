@@ -29,10 +29,10 @@ export function RecoveryBanner() {
         Diwan’s settings file is damaged, so nothing is being saved. Your WhatsApp logins are still safe on
         disk.
       </span>
-      <Button variant="ghost" className="h-8 shrink-0" onClick={() => void call('app:openDataFolder')}>
+      <Button variant="ghost" size="sm" className="shrink-0" onClick={() => void call('app:openDataFolder')}>
         Open folder
       </Button>
-      <Button variant="subtle" className="h-8 shrink-0" onClick={() => openDialog(START_FRESH)}>
+      <Button variant="subtle" size="sm" className="shrink-0" onClick={() => openDialog(START_FRESH)}>
         Start fresh
       </Button>
     </div>

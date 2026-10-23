@@ -3,6 +3,7 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
+import { focusables } from '../../src/renderer/focus'
 import { TOAST_MS, TOAST_RESUME_MIN_MS, useUi } from '../../src/renderer/state'
 import { Button } from '../../src/renderer/ui/Button'
 import { Dialog } from '../../src/renderer/ui/Dialog'
@@ -159,6 +160,23 @@ describe('Button and Kbd', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
+  test('Button sizes set height and padding (a className can’t override them reliably)', () => {
+    render(
+      <>
+        <Button>Medium</Button>
+        <Button size="sm">Small</Button>
+        <Button size="icon" aria-label="More" />
+      </>,
+    )
+    const cls = (name: string) => screen.getByRole('button', { name }).className.split(/\s+/)
+    expect(cls('Medium')).toEqual(expect.arrayContaining(['h-9', 'px-3.5']))
+    expect(cls('Small')).toEqual(expect.arrayContaining(['h-8', 'px-3.5']))
+    expect(cls('Small')).not.toContain('h-9')
+    expect(cls('More')).toEqual(expect.arrayContaining(['h-8', 'w-8', 'px-0']))
+    expect(cls('More')).not.toContain('h-9')
+    expect(cls('More')).not.toContain('px-3.5')
+  })
+
   test('Kbd is a <kbd>, left to right', () => {
     render(<Kbd>Ctrl 1</Kbd>)
     const k = screen.getByText('Ctrl 1')
@@ -244,6 +262,34 @@ describe('Dialog', () => {
     )
     await user.keyboard('{Escape}')
     expect(useUi.getState().dialog).toBeNull()
+  })
+})
+
+describe('focusables', () => {
+  test('controls that checkVisibility() reports hidden (CSS display:none, content-visibility) are skipped', () => {
+    // jsdom has no checkVisibility: stand in for Chromium's, hiding what CSS would hide.
+    const proto = HTMLElement.prototype as unknown as { checkVisibility?: () => boolean }
+    proto.checkVisibility = function (this: HTMLElement) {
+      return !this.closest('[data-css-hidden]')
+    }
+    try {
+      const root = document.createElement('div')
+      root.innerHTML = `
+        <button type="button">Shown</button>
+        <div data-css-hidden><button type="button">Styled away</button><input /></div>
+        <a href="#x">Link</a>`
+      document.body.append(root)
+      expect(focusables(root).map((el) => el.textContent || el.tagName)).toEqual(['Shown', 'Link'])
+      root.remove()
+    } finally {
+      delete proto.checkVisibility
+    }
+  })
+
+  test('without checkVisibility (jsdom) nothing is dropped for it', () => {
+    const root = document.createElement('div')
+    root.innerHTML = '<button type="button">A</button><button type="button">B</button>'
+    expect(focusables(root)).toHaveLength(2)
   })
 })
 

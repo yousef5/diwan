@@ -42,26 +42,34 @@ export function windowShortcuts(trayAvailable: boolean): Shortcut[] {
     { what: 'Settings', keys: ['Ctrl ,'] },
     { what: trayAvailable ? 'Hide to tray' : 'Minimize the window', keys: ['Ctrl W'] },
     { what: 'Quit Diwan', keys: ['Ctrl Q'] },
+    { what: 'Close Settings, a dialog or a menu', keys: ['Esc'] },
   ]
 }
 
 export const RAIL_SHORTCUTS: Shortcut[] = [
   { what: 'Move the focused account up or down', keys: ['Alt ↑', 'Alt ↓'] },
   { what: 'Open the focused account’s menu', keys: ['Shift F10', 'Menu'] },
-  { what: 'Close Settings, a dialog or a menu', keys: ['Esc'] },
 ]
+
+const layerOnTop = () => {
+  const s = useUi.getState()
+  return s.dialog !== null || s.menu !== null
+}
 
 const currentNav = (list: HTMLElement | null) => list?.querySelector<HTMLElement>('[aria-current="page"]')
 
-// Every change goes to main; what the page shows comes back in the next snapshot. A failure
-// (say, recovery mode) is an error toast from `call`, and the switch stays where main has it.
+// Every change goes to main; what the page shows comes back in the next snapshot, so a switch
+// always shows what main has. A failed call is an error toast (`call`). In recovery mode main
+// ignores the write silently (the store is read-only), which is why the switches are
+// disabled then.
 const save = (patch: SettingsPatch) => void call('settings:update', patch)
 const setMuted = (id: string, muted: boolean) => void call('account:update', { id, patch: { muted } })
 
-// The settings page (docs/design/settings.dc.html). It covers the whole window, stage included,
-// but never replaces it: every WhatsApp page stays mounted underneath. A modal dialog: focus moves
-// to the current section on open and back to whatever had it on close, Tab stays inside, and Esc
-// closes it unless a dialog or menu is open on top (that layer takes the Esc first).
+// The settings page (docs/design/settings.dc.html). It covers the window below the window-controls
+// bar (when that is shown), stage included, but never replaces it: every WhatsApp page stays
+// mounted underneath. A modal dialog: focus moves to the current section on open and back to
+// whatever had it on close, Tab stays inside, and Esc closes it unless a dialog or menu is open on
+// top (that layer takes the Esc first).
 export function SettingsPage() {
   const open = useUi((s) => s.settingsOpen)
   const ready = useUi((s) => s.snap !== null)
@@ -72,6 +80,9 @@ function SettingsPanel() {
   const snap = useUi((s) => s.snap) as Snapshot
   const section = useUi((s) => s.section)
   const covered = useUi((s) => s.dialog !== null || s.menu !== null)
+  // The window-controls bar (32 px, App) stays above the page, so the window can still be moved,
+  // minimised and closed with Settings open.
+  const controls = snap.settings.showWindowControls
   const openSettings = useUi((s) => s.openSettings)
   const closeSettings = useUi((s) => s.closeSettings)
   useEscape(closeSettings, !covered)
@@ -85,9 +96,12 @@ function SettingsPanel() {
   // The last control focused inside the page, for when a dialog or menu on top hands focus away.
   const lastInside = useRef<HTMLElement | null>(null)
 
+  // Opened under a dialog or menu (Ctrl+, works then): leave focus in that layer; the effect below
+  // moves it in here once nothing is on top. Likewise, closing never pulls focus out from under one.
   useEffect(() => {
-    focusFirst([() => currentNav(nav.current), () => panel.current])
+    if (!layerOnTop()) focusFirst([() => currentNav(nav.current), () => panel.current])
     return () => {
+      if (layerOnTop()) return
       focusFirst([() => (returnTo === document.body ? null : returnTo), activeTile, mainRegion])
     }
   }, [returnTo])
@@ -126,13 +140,14 @@ function SettingsPanel() {
       onFocus={(e) => {
         if (e.target instanceof HTMLElement && e.target !== panel.current) lastInside.current = e.target
       }}
-      className="no-drag fixed inset-0 z-40 flex bg-bg-0 outline-none"
+      className={`no-drag fixed inset-x-0 bottom-0 z-40 flex bg-bg-0 outline-none ${controls ? 'top-8' : 'top-0'}`}
     >
       <nav
         aria-label="Settings sections"
         className="flex w-[236px] shrink-0 flex-col border-r border-line bg-bg-1 px-3 py-[22px]"
       >
-        <h1 id={titleId} className="mx-2.5 mt-0 mb-3.5 text-[18px] font-semibold text-fg-strong">
+        {/* The title row drags the frameless window, as the rail and context bar do under it. */}
+        <h1 id={titleId} className="drag mx-2.5 mt-0 mb-3.5 text-[18px] font-semibold text-fg-strong">
           Settings
         </h1>
         <ul ref={nav} onKeyDown={onNavKey} className="m-0 flex list-none flex-col gap-0.5 p-0">
@@ -355,7 +370,7 @@ function Accounts({ snap }: { snap: Snapshot }) {
             {i < 9 && <Kbd>{`Ctrl ${i + 1}`}</Kbd>}
             <Button
               variant="ghost"
-              className="h-8"
+              size="sm"
               aria-label={`Edit ${a.name}`}
               disabled={recovery}
               onClick={() => openDialog({ kind: 'edit', id: a.id })}
@@ -364,7 +379,7 @@ function Accounts({ snap }: { snap: Snapshot }) {
             </Button>
             <Button
               variant="ghost"
-              className="h-8 w-8 px-0"
+              size="icon"
               aria-label={`More actions for ${a.name}`}
               aria-haspopup="menu"
               onClick={(e) => {
