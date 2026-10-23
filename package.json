@@ -1,7 +1,7 @@
 {
   "name": "diwan",
   "productName": "Diwan",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "description": "Multi-account WhatsApp Web desktop client",
   "homepage": "https://github.com/yousef5/diwan",

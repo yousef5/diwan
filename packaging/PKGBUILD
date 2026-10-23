@@ -5,7 +5,7 @@
 # No MimeType in the desktop entry on purpose: it must never take a default (whatsapp: links included)
 # away from another app. Opt in by hand: xdg-mime default diwan.desktop x-scheme-handler/whatsapp
 pkgname=diwan
-pkgver=1.0.0
+pkgver=1.1.0
 pkgrel=1
 pkgdesc='Multi-account WhatsApp Web desktop client'
 arch=('x86_64')
