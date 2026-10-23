@@ -22,6 +22,7 @@
     "test:watch": "vitest",
     "e2e": "electron-vite build && sh tests/e2e/run.sh",
     "package": "electron-vite build && electron-builder --linux dir --publish never",
+    "package:arch": "bun run package && PKGDEST=\"$PWD/release\" BUILDDIR=\"$PWD/release/makepkg\" makepkg -f -C -D packaging",
     "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never"
   },
   "devDependencies": {

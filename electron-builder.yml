@@ -1,0 +1,22 @@
+# `bun run package` → release/linux-unpacked (the `dir` target). packaging/PKGBUILD turns that into
+# an Arch package (`bun run package:arch`). Only the built app goes into app.asar: never tests/,
+# src/ or the E2E fixtures.
+appId: com.yousef5.diwan
+productName: Diwan
+executableName: diwan
+copyright: Copyright © 2026 yousef5
+directories:
+  output: release
+  buildResources: resources
+# Use the Electron that `bunx install-electron --no` already put in node_modules (no download).
+electronDist: node_modules/electron/dist
+files:
+  - out/**/*
+  - package.json
+asar: true
+npmRebuild: false
+linux:
+  target:
+    - dir
+  category: Network
+  icon: resources/icon.png

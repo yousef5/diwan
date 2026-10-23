@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=Diwan
+Name[ar]=ديوان
+GenericName=WhatsApp accounts
+GenericName[ar]=حسابات واتساب
+Comment=All your WhatsApp accounts in one window
+Comment[ar]=كل حسابات واتساب في نافذة واحدة
+Exec=diwan %U
+Icon=diwan
+Terminal=false
+Categories=Network;InstantMessaging;Chat;
+Keywords=whatsapp;chat;messages;diwan;
+Keywords[ar]=واتساب;دردشة;رسائل;ديوان;
+StartupWMClass=diwan

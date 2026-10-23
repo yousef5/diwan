@@ -1,0 +1,49 @@
+# Maintainer: yousef5
+# Packages the app that `bun run package` built in the repo root (release/linux-unpacked).
+# Build with `bun run package:arch`: the package lands in release/, makepkg's work dirs in
+# release/makepkg. Installs only into /opt/diwan, /usr/bin/diwan, the desktop entry and hicolor icons.
+# No MimeType in the desktop entry on purpose: it must never take a default (whatsapp: links included)
+# away from another app. Opt in by hand: xdg-mime default diwan.desktop x-scheme-handler/whatsapp
+pkgname=diwan
+pkgver=1.0.0
+pkgrel=1
+pkgdesc='Multi-account WhatsApp Web desktop client'
+arch=('x86_64')
+url='https://github.com/yousef5/diwan'
+license=('LicenseRef-UNLICENSED')
+depends=('alsa-lib' 'at-spi2-core' 'gtk3' 'libcups' 'libnotify' 'libxkbcommon' 'mesa' 'nss' 'xdg-utils')
+makedepends=('librsvg')
+options=('!strip' '!debug' '!lto')
+
+_repo() { realpath "$startdir/.."; }
+
+package() {
+  local repo app size
+  repo="$(_repo)"
+  app="$repo/release/linux-unpacked"
+  [ -x "$app/diwan" ] || { error "$app/diwan is missing: run 'bun run package' first"; return 1; }
+  local version
+  version="$(sed -n 's/^  "version": "\(.*\)",$/\1/p' "$repo/package.json")"
+  [ "$version" = "$pkgver" ] || { error "package.json is $version but PKGBUILD is $pkgver"; return 1; }
+
+  install -d "$pkgdir/opt/diwan"
+  cp -a "$app/." "$pkgdir/opt/diwan/"
+  # Electron's fallback app from the stock dist; Diwan never needs it.
+  rm -f "$pkgdir/opt/diwan/resources/default_app.asar"
+  # Only used where unprivileged user namespaces are off; Chromium prefers the namespace sandbox.
+  chmod 4755 "$pkgdir/opt/diwan/chrome-sandbox"
+
+  install -Dm755 "$startdir/diwan.sh" "$pkgdir/usr/bin/diwan"
+  install -Dm644 "$startdir/diwan.desktop" "$pkgdir/usr/share/applications/diwan.desktop"
+
+  install -Dm644 "$repo/resources/icon.svg" "$pkgdir/usr/share/icons/hicolor/scalable/apps/diwan.svg"
+  for size in 16 22 24 32 48 64 128 256 512; do
+    install -d "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps"
+    rsvg-convert -w "$size" -h "$size" "$repo/resources/icon.svg" \
+      -o "$pkgdir/usr/share/icons/hicolor/${size}x${size}/apps/diwan.png"
+  done
+
+  install -d "$pkgdir/usr/share/licenses/diwan"
+  ln -s /opt/diwan/LICENSE.electron.txt "$pkgdir/usr/share/licenses/diwan/LICENSE.electron.txt"
+  ln -s /opt/diwan/LICENSES.chromium.html "$pkgdir/usr/share/licenses/diwan/LICENSES.chromium.html"
+}
