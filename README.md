@@ -1,6 +1,6 @@
 # Diwan (ديوان)
 
-All your WhatsApp accounts in one calm window. A Linux desktop app (Electron), and a private project.
+All your WhatsApp accounts in one calm window. A Linux desktop app (Electron).
 
 - Every account gets its own isolated session. Ctrl+1…9 or Ctrl+Tab switch between them instantly, with no reload.
 - A rail of accounts plus a context bar (design B in `docs/design/`). Arabic account names are fully supported.
