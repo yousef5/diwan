@@ -12,9 +12,9 @@ import { OVERLAY, StatusOverlay } from './StatusOverlay'
 const byId = (a: Account, b: Account) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
 
 // main → shell `remount`: replace that account's webview with a fresh guest. Honoured in any
-// account state. Main sends it after the snapshot it follows from (sendShell flushes first): after
-// a logout it arrives with the account already back in 'loading', so the new webview mounts at once;
-// while an account is still 'loggingOut' (and so not mounted) the bumped key simply waits.
+// account state. Main sends it after the snapshot it follows from (sendShell flushes first). A
+// logout sends it while the account is still 'loggingOut' (and so not mounted): the bumped key
+// waits, and the one fresh webview mounts when the 'loading' snapshot that follows arrives.
 export function useRemountCommands(): void {
   useEffect(
     () =>

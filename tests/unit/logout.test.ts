@@ -5,11 +5,14 @@ import type { AccountRuntime, ShellCommand } from '../../src/shared/types'
 function setup(over: Partial<LogoutDeps> = {}) {
   let rt: AccountRuntime = { state: 'ready', unread: 5, avatar: 'x' }
   const sent: ShellCommand[] = []
+  // setRuntime writes and shell commands, in the order main made them.
+  const events: string[] = []
   const d: LogoutDeps = {
     hasAccount: () => true,
     runtimeOf: () => rt,
     setRuntime: (_i, p) => {
       rt = { ...rt, ...p }
+      events.push(`state:${p.state}`)
     },
     clearCustomAvatar: vi.fn(),
     hasGuest: () => false,
@@ -17,11 +20,14 @@ function setup(over: Partial<LogoutDeps> = {}) {
     removeAvatar: vi.fn(),
     forgetNotifications: vi.fn(),
     forgetAvatar: vi.fn(),
-    sendShell: (c) => sent.push(c),
+    sendShell: (c) => {
+      sent.push(c)
+      events.push(c.type)
+    },
     log: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
     ...over,
   }
-  return { d, sent, rt: () => rt }
+  return { d, sent, events, rt: () => rt }
 }
 
 test('success resets the account and remounts', async () => {
@@ -30,6 +36,24 @@ test('success resets the account and remounts', async () => {
   expect(rt()).toEqual({ state: 'loading', unread: 0, avatar: null })
   expect(sent).toEqual([{ type: 'remount', id: 'a' }])
   expect(d.forgetAvatar).toHaveBeenCalledWith('a')
+})
+
+// sendShell flushes the hub first: a 'loading' written before the remount would reach the shell
+// first and mount the old webview, which the bump then throws away.
+test('the remount goes out while the account is still loggingOut, before loading', async () => {
+  const { d, events } = setup()
+  await logoutAccount('a', d)
+  expect(events).toEqual(['state:loggingOut', 'remount', 'state:loading'])
+})
+
+test('the same order when the logout fails', async () => {
+  const { d, events } = setup({
+    clearSession: async () => {
+      throw new Error('disk')
+    },
+  })
+  await expect(logoutAccount('a', d)).rejects.toThrow('disk')
+  expect(events).toEqual(['state:loggingOut', 'remount', 'state:loading'])
 })
 
 test('a failing clearStorageData does not leave the account stuck', async () => {

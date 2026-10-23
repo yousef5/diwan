@@ -186,15 +186,25 @@ describe('Stage: webviews', () => {
     expect(useUi.getState().remount).toEqual({ [B]: 1 })
   })
 
-  test('remount is honoured in any state: during a logout the fresh webview mounts when it ends', () => {
+  test('remount is honoured in any state: a logout mounts exactly one fresh webview when it ends', () => {
     setSnap()
     render(<Stage />)
     const old = webview(B)
+    const observer = new MutationObserver(() => {})
+    observer.observe(document.body, { childList: true, subtree: true })
+    // main's order (src/main/logout.ts): loggingOut, then the remount while still loggingOut, then loading
     withState(B, 'loggingOut')
     command({ type: 'remount', id: B })
     expect(webview(B)).toBeNull()
     withState(B, 'loading')
-    expect(webview(B)).not.toBeNull()
+    const mounted = observer
+      .takeRecords()
+      .flatMap((r) => Array.from(r.addedNodes))
+      .flatMap((n) => (n instanceof Element ? [n, ...n.querySelectorAll('webview')] : []))
+      .filter((el) => el.matches(`webview[data-account="${B}"]`))
+    observer.disconnect()
+    expect(mounted).toHaveLength(1)
+    expect(webview(B)).toBe(mounted[0])
     expect(webview(B)).not.toBe(old)
     // and for a hung page
     const hung = webview(B)

@@ -38,8 +38,11 @@ export async function logoutAccount(id: string, d: LogoutDeps): Promise<void> {
     ok = true
   } finally {
     if (d.hasAccount(id)) {
-      d.setRuntime(id, ok ? { avatar: null, unread: 0, state: 'loading' } : { state: 'loading' })
+      // Remount first: sendShell flushes the hub, so the shell gets the bump while the account is
+      // still 'loggingOut' (not mounted) and mounts one fresh webview on 'loading'. The other way
+      // round it would mount the old key on 'loading' and then replace it, a guest thrown away.
       d.sendShell({ type: 'remount', id })
+      d.setRuntime(id, ok ? { avatar: null, unread: 0, state: 'loading' } : { state: 'loading' })
     }
   }
 }
