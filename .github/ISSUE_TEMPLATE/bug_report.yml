@@ -1,0 +1,37 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: Diwan version
+      description: Settings → About
+      placeholder: "1.1.0"
+    validations: { required: true }
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows 10/11, Arch / CachyOS / Manjaro, Debian / Ubuntu, Fedora, Other Linux]
+    validations: { required: true }
+  - type: input
+    id: install
+    attributes:
+      label: How did you install it?
+      placeholder: ".exe, AppImage, .deb, .rpm, AUR, from source"
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what did you expect?
+    validations: { required: true }
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+  - type: textarea
+    id: logs
+    attributes:
+      label: Log
+      description: "The newest lines of `logs/main.log` in the data folder (Linux `~/.config/Diwan`, Windows `%APPDATA%\\Diwan`). It contains no message text."
+      render: text
