@@ -37,6 +37,10 @@ const stamp = () => `${Date.now()}-${process.pid}-${Math.random().toString(36).s
 const MAX_BACKOFF_MS = 30_000
 const backoff = (failures: number) => Math.min(MAX_BACKOFF_MS, 1000 * 2 ** (failures - 1))
 const LINK_FALLBACK_CODES = new Set(['EPERM', 'ENOTSUP', 'EXDEV', 'EMLINK'])
+// A directory can't be opened or fsynced everywhere (Windows, some network and FUSE file systems).
+const DIR_FSYNC_UNSUPPORTED = new Set(['EPERM', 'EISDIR', 'EINVAL', 'EBADF'])
+const dirFsyncUnsupported = (e: unknown) =>
+  DIR_FSYNC_UNSUPPORTED.has((e as NodeJS.ErrnoException)?.code ?? '')
 
 type Probe = { kind: 'absent' | 'io' | 'newer' | 'bad' } | { kind: 'good'; file: DiwanFile }
 
@@ -64,6 +68,7 @@ export class Store {
     private readonly debounceMs = 300,
     private readonly onError?: (e: unknown) => void,
     fsOverrides: Partial<StoreFs> = {},
+    private readonly platform: NodeJS.Platform = process.platform,
   ) {
     this.fs = { ...nodeFs, ...fsOverrides }
     this.fs.mkdirSync(dir, { recursive: true })
@@ -249,10 +254,21 @@ export class Store {
     this.fs.renameSync(bakTmp, this.backupPath)
   }
 
+  // Best effort: the rename is already done. Windows can't open a directory at all (EPERM), and
+  // NTFS makes the rename durable on its own.
   private fsyncDir(): void {
-    const fd = this.fs.openSync(dirname(this.path), 'r')
+    if (this.platform === 'win32') return
+    let fd: number
+    try {
+      fd = this.fs.openSync(dirname(this.path), 'r')
+    } catch (e) {
+      if (dirFsyncUnsupported(e)) return
+      throw e
+    }
     try {
       this.fs.fsyncSync(fd)
+    } catch (e) {
+      if (!dirFsyncUnsupported(e)) throw e
     } finally {
       this.fs.closeSync(fd)
     }

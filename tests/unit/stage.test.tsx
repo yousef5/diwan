@@ -56,6 +56,8 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     recovery: false,
     importAvailable: false,
     trayAvailable: true,
+    platform: 'linux',
+    dataDir: '/home/u/.config/Diwan',
     ...over,
   }
 }

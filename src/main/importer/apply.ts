@@ -16,6 +16,7 @@ import { cp, lstat, readdir, rename, rm } from 'node:fs/promises'
 import { join } from 'node:path'
 import type { ImportPlan, ImportResult } from '../../shared/types'
 import type { Logger } from '../log'
+import { type RetryOptions, retryAsync } from '../retry-fs'
 import type { StateHub } from '../state'
 import type { PlanDeps } from './plan'
 
@@ -147,6 +148,8 @@ export async function applyImport(
     log: Logger
     isNexusRunning?: () => boolean
     rm?: typeof rm
+    rename?: (from: string, to: string) => Promise<void>
+    retry?: Omit<RetryOptions, 'sleep'>
   },
 ): Promise<ImportResult> {
   if (d.hub.store.recovery) throw new Error('Diwan’s settings file is damaged; fix that before importing')
@@ -154,6 +157,7 @@ export async function applyImport(
   running = true
   try {
     const remove = d.rm ?? rm
+    const move = d.rename ?? rename
     const result: ImportResult = { imported: [], failed: [] }
     let done = 0
     for (const item of plan.items) {
@@ -178,7 +182,7 @@ export async function applyImport(
           },
         })
         if (d.isNexusRunning?.()) throw new Error('Nexus started during the import; quit it and try again')
-        await rename(partial, dest)
+        await retryAsync(() => move(partial, dest), d.retry)
         try {
           d.setupSession(id)
           d.hub.addAccount(item.name, item.color, id, item.sourceId)

@@ -1,5 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, renameSync, rmSync, statSync } from 'node:fs'
 import { join } from 'node:path'
+import { retrySync } from './retry-fs'
 
 export interface Logger {
   info(msg: string, extra?: unknown): void
@@ -76,8 +77,8 @@ export function createLogger(dir: string, opts: { maxBytes?: number; echo?: bool
     }
     rmSync(`${file}.${KEEP}`, { force: true })
     for (let i = KEEP - 1; i >= 1; i--)
-      if (existsSync(`${file}.${i}`)) renameSync(`${file}.${i}`, `${file}.${i + 1}`)
-    renameSync(file, `${file}.1`)
+      if (existsSync(`${file}.${i}`)) retrySync(() => renameSync(`${file}.${i}`, `${file}.${i + 1}`))
+    retrySync(() => renameSync(file, `${file}.1`))
   }
 
   const write = (level: 'info' | 'warn' | 'error', msg: string, extra?: unknown) => {

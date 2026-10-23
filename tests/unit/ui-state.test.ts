@@ -30,6 +30,8 @@ const snap = (ids: string[]): Snapshot => ({
   recovery: false,
   importAvailable: false,
   trayAvailable: true,
+  platform: 'linux',
+  dataDir: '/home/u/.config/Diwan',
 })
 
 beforeEach(() => {

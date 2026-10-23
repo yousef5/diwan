@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -78,6 +79,45 @@ function fakeNexus() {
 }
 
 describe('import apply', () => {
+  test('win32: a rename blocked by a transient file lock is retried', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    let calls = 0
+    const rename = vi.fn(async (from: string, to: string) => {
+      if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      renameSync(from, to)
+    })
+    const r = await applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+      rename,
+      retry: { platform: 'win32', delays: [0, 0] },
+    })
+    expect(r).toEqual({ imported: ['A'], failed: [] })
+    expect(rename).toHaveBeenCalledTimes(2)
+  })
+
+  test('linux: a failed rename is not retried', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    const rename = vi.fn(async () => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+    })
+    const r = await applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+      rename,
+      retry: { platform: 'linux', delays: [0, 0] },
+    })
+    expect(r.failed).toHaveLength(1)
+    expect(rename).toHaveBeenCalledTimes(1)
+    expect(hub.accounts()).toEqual([])
+  })
+
   test('copies the session, registers the account, leaves Nexus untouched', async () => {
     const n = fakeNexus()
     const diwanDir = tmp('diwan-')

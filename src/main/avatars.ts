@@ -3,6 +3,7 @@ import { join } from 'node:path'
 import { type NativeImage, nativeImage } from 'electron'
 import { AccountId } from '../shared/validators'
 import { avatarFileOk } from './avatar-check'
+import { retrySync } from './retry-fs'
 
 const SIZE = 128
 
@@ -39,7 +40,7 @@ export class AvatarFiles {
     const file = this.file(id)
     const tmp = `${file}.tmp`
     writeFileSync(tmp, n.toPNG(), { mode: 0o600 })
-    renameSync(tmp, file)
+    retrySync(() => renameSync(tmp, file))
     return n.toDataURL()
   }
 

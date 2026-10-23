@@ -1,6 +1,6 @@
 import { lstat, rm } from 'node:fs/promises'
 import { join } from 'node:path'
-import { app, BrowserWindow, dialog, Menu, screen, session } from 'electron'
+import { app, BrowserWindow, dialog, Menu, powerMonitor, screen, session } from 'electron'
 import appIcon from '../../resources/icon.png?asset'
 import trayIcon from '../../resources/tray.png?asset'
 import { SHELL_COMMAND, STATE_CHANGED } from '../shared/ipc'
@@ -20,6 +20,8 @@ import { Notifier } from './notifier'
 import { sweepRemovedAccountFolders } from './orphan-partitions'
 import { resolvePaths } from './paths'
 import { Registry } from './registry'
+import { rmRetryOptions } from './retry-fs'
+import { wireSessionEnd } from './session-end'
 import { accountForSession, setupGuestSession } from './sessions'
 import { matchShortcut, type ShortcutAction } from './shortcuts'
 import { StateHub } from './state'
@@ -29,6 +31,8 @@ import { visibleBounds } from './window-bounds'
 
 // Tests and side-by-side runs use a throwaway profile.
 if (process.env.DIWAN_USER_DATA) app.setPath('userData', process.env.DIWAN_USER_DATA)
+// Windows groups taskbar buttons and attributes notifications by this id; it must match the installer's appId.
+if (process.platform === 'win32') app.setAppUserModelId('com.yousef5.diwan')
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else start()
@@ -40,6 +44,7 @@ function start(): void {
   const store = new Store(paths.userData, 300, (e) => log.error('saving settings failed (will retry)', e))
   if (store.recovery) log.error('settings file is damaged; running in recovery mode')
   const hub = new StateHub(store, (e) => log.error('a state listener failed', e))
+  hub.dataDir = paths.userData
   const nexusPartitions = join(paths.nexusUserData, 'Partitions')
   const importedSources = () =>
     new Set(hub.accounts().flatMap((a) => (a.importedFrom ? [a.importedFrom] : [])))
@@ -207,7 +212,7 @@ function start(): void {
       await ses.clearStorageData().catch(() => {})
       await ses.clearCache().catch(() => {})
     }
-    await rm(dir, { recursive: true, force: true }).catch((e) =>
+    await rm(dir, { recursive: true, force: true, ...rmRetryOptions() }).catch((e) =>
       log.warn('could not delete the account folder', e),
     )
     log.info('account removed', { id })
@@ -386,6 +391,17 @@ function start(): void {
       hub.trayAvailable = tray.start()
       hub.notify()
       win = createWindow()
+      // Logoff/shutdown: the close-to-tray handler must not cancel the close, and settings are saved now.
+      wireSessionEnd({
+        platform: process.platform,
+        win,
+        powerMonitor,
+        onEnd: () => {
+          quitting = true
+          persistGeometry()
+          flushQuietly()
+        },
+      })
 
       registerShellIpc({
         hub,

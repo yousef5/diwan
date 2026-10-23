@@ -1,6 +1,7 @@
 import { rm as fsRm, lstat } from 'node:fs/promises'
 import { join } from 'node:path'
 import { AccountId } from '../shared/validators'
+import { rmRetryOptions } from './retry-fs'
 import type { LoadSource } from './store/store'
 
 // Removing an account deletes its Partitions/acc-<id> folder, but Electron keeps that session in
@@ -8,6 +9,8 @@ import type { LoadSource } from './store/store'
 // also leaves a tombstone (pendingFolderRemovals, written in the same store update), and the next
 // start deletes the folder again. A folder is NEVER deleted just because no account lists it: an
 // account list loaded from .bak, or rebuilt by "Start fresh", can miss accounts that still exist.
+
+type RmOptions = { recursive: true; force: true; maxRetries?: number; retryDelay?: number }
 
 export interface FolderRemovalPlan {
   remove: string[] // ids whose acc-<id> folder may be deleted
@@ -48,7 +51,10 @@ export interface FolderSweepHub {
 export async function sweepRemovedAccountFolders(
   partitionsDir: string,
   hub: FolderSweepHub,
-  deps: { rm?: (path: string, opts: { recursive: true; force: true }) => Promise<void> } = {},
+  deps: {
+    rm?: (path: string, opts: RmOptions) => Promise<void>
+    platform?: NodeJS.Platform
+  } = {},
 ): Promise<string[]> {
   if (!orphanSweepAllowed(hub.store)) return []
   const rm = deps.rm ?? fsRm
@@ -74,7 +80,7 @@ export async function sweepRemovedAccountFolders(
       continue
     }
     try {
-      await rm(dir, { recursive: true, force: true })
+      await rm(dir, { recursive: true, force: true, ...rmRetryOptions(deps.platform) })
       removed.push(name)
       settled.push(id)
     } catch {}

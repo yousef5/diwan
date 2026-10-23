@@ -210,6 +210,95 @@ describe('Store', () => {
     expect(read('diwan.json').importedFromNexus).toBe(true)
   })
 
+  describe('directory fsync', () => {
+    const errno = (code: string) => Object.assign(new Error(code), { code })
+    // Two saves: the second must rotate the first into .bak, which only happens once main is known good.
+    const twoSaves = (s: Store) => {
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      s.flush()
+      s.update((f) => {
+        f.importedFromNexus = false
+      })
+      s.flush()
+    }
+
+    test('win32: the directory is never opened, saves succeed and .bak rotates', () => {
+      const errors: unknown[] = []
+      const opened: string[] = []
+      const s = new Store(
+        dir,
+        10_000,
+        (e) => errors.push(e),
+        {
+          openSync: ((p: string) => {
+            opened.push(p)
+            throw errno('EPERM')
+          }) as never,
+        },
+        'win32',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(opened).toEqual([])
+      expect(errors).toEqual([])
+      expect(read('diwan.json').importedFromNexus).toBe(false)
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test.each(['EPERM', 'EISDIR', 'EINVAL', 'EBADF'])('%s from the directory fsync is ignored', (code) => {
+      const errors: unknown[] = []
+      const s = new Store(
+        dir,
+        10_000,
+        (e) => errors.push(e),
+        {
+          fsyncSync: (() => {
+            throw errno(code)
+          }) as never,
+        },
+        'linux',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(errors).toEqual([])
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test('EPERM opening the directory is ignored', () => {
+      const s = new Store(
+        dir,
+        10_000,
+        undefined,
+        {
+          openSync: (() => {
+            throw errno('EPERM')
+          }) as never,
+        },
+        'linux',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test('a real I/O error from the directory fsync still fails the save', () => {
+      const s = new Store(
+        dir,
+        10_000,
+        undefined,
+        {
+          fsyncSync: (() => {
+            throw errno('EIO')
+          }) as never,
+        },
+        'linux',
+      )
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      expect(() => s.flush()).toThrow('EIO')
+    })
+  })
+
   describe('timers', () => {
     beforeEach(() => vi.useFakeTimers())
     afterEach(() => vi.useRealTimers())

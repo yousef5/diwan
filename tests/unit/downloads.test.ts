@@ -13,6 +13,29 @@ describe('sanitizeFilename', () => {
   ])('%s', (input, out) => expect(sanitizeFilename(input)).toBe(out))
 })
 
+describe('sanitizeFilename on Windows-unsafe names', () => {
+  test.each([
+    ['a<b>c:d"e|f?g*h.txt', 'a_b_c_d_e_f_g_h.txt'],
+    ['report: final?.pdf', 'report_ final_.pdf'],
+    ['CON', 'CON_'],
+    ['con.txt', 'con_.txt'],
+    ['Nul.tar.gz', 'Nul_.tar.gz'],
+    ['prn.', 'prn_'],
+    ['aux.pdf', 'aux_.pdf'],
+    ['COM1.log', 'COM1_.log'],
+    ['lpt9', 'lpt9_'],
+    ['COM0.txt', 'COM0.txt'],
+    ['COM10.txt', 'COM10.txt'],
+    ['console.txt', 'console.txt'],
+    ['my con.txt', 'my con.txt'],
+  ])('%s → %s', (input, out) => expect(sanitizeFilename(input)).toBe(out))
+
+  test('a long reserved-looking name still fits in 255 bytes', () => {
+    const clean = sanitizeFilename(`con.${'x'.repeat(300)}`)
+    expect(Buffer.byteLength(clean, 'utf8')).toBeLessThanOrEqual(255)
+  })
+})
+
 describe('uniquePath', () => {
   test('free name is kept', () => {
     expect(uniquePath('/d', 'a.pdf', () => false)).toBe('/d/a.pdf')

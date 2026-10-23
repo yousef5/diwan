@@ -54,6 +54,8 @@ export interface AccountRuntime {
   avatar: string | null
 }
 
+export type Platform = 'linux' | 'win32' | 'darwin'
+
 export interface Snapshot {
   accounts: Account[]
   settings: Settings
@@ -62,6 +64,8 @@ export interface Snapshot {
   recovery: boolean
   importAvailable: boolean
   trayAvailable: boolean
+  platform: Platform
+  dataDir: string // the settings/profile folder, shown as-is
 }
 
 // main → shell. Each is handled in exactly one place: `remount` by Stage (useRemountCommands),

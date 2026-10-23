@@ -125,6 +125,22 @@ describe('sweepRemovedAccountFolders', () => {
     expect(p.launch().pendingFolderRemovals()).toEqual([GONE])
   })
 
+  test('win32 deletes retry through file locks; linux passes no retry options', async () => {
+    for (const [platform, extra] of [
+      ['win32', { maxRetries: 5, retryDelay: 200 }],
+      ['linux', {}],
+    ] as const) {
+      const p = profile({ main: file([], [GONE]), folders: [GONE] })
+      const rm = vi.fn(async (path: string) => rmSync(path, { recursive: true, force: true }))
+      await sweepRemovedAccountFolders(p.parts, p.launch(), { rm, platform })
+      expect(rm).toHaveBeenCalledWith(join(p.parts, `acc-${GONE}`), {
+        recursive: true,
+        force: true,
+        ...extra,
+      })
+    }
+  })
+
   test('runs nothing in recovery mode', async () => {
     const p = profile({ main: 'broken', bak: file([], [GONE]), folders: [GONE] })
     writeFileSync(join(p.root, 'diwan.json.bak'), 'also broken')

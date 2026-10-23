@@ -32,11 +32,16 @@ function fitBase(base: string, ext: string, reserve: number): string {
   return out
 }
 
+// Windows device names, reserved with any extension ("con.txt" opens the console).
+const RESERVED = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\s*)(?=\.|$)/i
+
+// Safe on every OS: Windows-only rules apply everywhere, so a name never depends on where it lands.
 export function sanitizeFilename(name: string): string {
   const cleaned = name
-    .replace(/[/\\]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '_')
+    .replace(/[/\\<>:"|?*]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '_')
     .trim()
     .replace(/^[.\s]+|[.\s]+$/g, '')
+    .replace(RESERVED, '$1_$2')
   if (!cleaned || cleaned === '.' || cleaned === '..') return 'download'
   const { base, ext } = splitName(cleaned)
   return `${fitBase(base, ext, SUFFIX_RESERVE)}${ext}` || 'download'
