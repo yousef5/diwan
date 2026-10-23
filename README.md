@@ -31,11 +31,20 @@ with its own notifications and unread count, one shortcut away.
 
 <br>
 
-<img src="docs/screenshots/settings.png" width="88%" alt="Diwan settings: notifications per account">
+<img src="docs/screenshots/switching.gif" width="88%" alt="Switching between accounts in Diwan">
 
 </div>
 
 <br>
+
+<p align="center">
+  <img src="docs/screenshots/hero.png" width="49%" alt="Four accounts in the rail, one open">
+  <img src="docs/screenshots/menu.png" width="49%" alt="Account menu">
+</p>
+<p align="center">
+  <img src="docs/screenshots/settings.png" width="60%" alt="Notification settings per account">
+</p>
+<p align="center"><sub>Screenshots use demo accounts. The QR code on WhatsApp's login page is blurred.</sub></p>
 
 ## 💡 Why Diwan?
 
