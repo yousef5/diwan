@@ -1,6 +1,7 @@
 import { type DragEvent, type KeyboardEvent, type MouseEvent, useEffect, useRef, useState } from 'react'
 import type { AccountRuntime } from '../../shared/types'
 import { call } from '../api'
+import { accountTile } from '../focus'
 import { DiwanMark, Icon } from '../icons'
 import { useUi } from '../state'
 import { Kbd } from '../ui/Kbd'
@@ -28,7 +29,6 @@ export function Rail() {
   const openSettings = useUi((s) => s.openSettings)
   const [dragId, setDragId] = useState<string | null>(null)
   const [drop, setDrop] = useState<{ id: string; where: 'before' | 'after' } | null>(null)
-  const listRef = useRef<HTMLDivElement>(null)
   // A tile moved by keyboard: React moves its DOM node, which drops focus, so put it back once the
   // new order arrives.
   const refocus = useRef<string | null>(null)
@@ -38,9 +38,7 @@ export function Rail() {
     const id = refocus.current
     if (!id || order === undefined) return
     refocus.current = null
-    for (const el of listRef.current?.querySelectorAll<HTMLElement>('[data-account-id]') ?? []) {
-      if (el.dataset.accountId === id) el.focus()
-    }
+    accountTile(id)?.focus()
   }, [order])
 
   if (!snap) return null
@@ -100,10 +98,7 @@ export function Rail() {
 
       {/* The 8 px padding (cancelled by the negative margin, so spacing matches the design) keeps
           the unread pills and the wide focus ring of the first and last tile inside the scroll box. */}
-      <div
-        ref={listRef}
-        className="no-drag -my-2 flex min-h-0 flex-col items-center gap-2.5 overflow-y-auto py-2 [scrollbar-width:none]"
-      >
+      <div className="no-drag -my-2 flex min-h-0 flex-col items-center gap-2.5 overflow-y-auto py-2 [scrollbar-width:none]">
         {accounts.map((a, i) => (
           <AccountTile
             key={a.id}

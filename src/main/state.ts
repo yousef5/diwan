@@ -26,6 +26,9 @@ const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread
 //   SNAPSHOT_GAP_MS; a burst is coalesced into a trailing push of the latest state.
 // - flush() sends a waiting push right now. Call it before any message to the shell that
 //   depends on the state (sendShell does), so a remount never overtakes the snapshot.
+//   It is a no-op while a push is being delivered: a listener that changes state and flushes
+//   (directly or through sendShell) would otherwise hand the later listeners the newer snapshot
+//   before the one still being delivered. Its change goes out in the next push instead.
 // The gap is measured on the monotonic clock: a wall-clock step (NTP, a manual change) must not
 // freeze pushes. Persistence (Store, persistNow) is never throttled.
 export const SNAPSHOT_GAP_MS = 50
@@ -41,6 +44,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
   private timer: ReturnType<typeof setTimeout> | null = null
   private seq = 0 // only the newest queued push may fire; older microtasks are stale
   private lastEmit = Number.NEGATIVE_INFINITY // performance.now() of the last push
+  private emitting = false // inside emit('changed'): flush() must not nest a push
 
   constructor(
     readonly store: Store,
@@ -97,7 +101,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
 
   // Sends a queued push now, synchronously. No-op when nothing is waiting.
   flush(): void {
-    if (this.pending) this.emitNow()
+    if (this.pending && !this.emitting) this.emitNow()
   }
 
   // Runtime churn: after a quiet spell the push goes out at the end of this tick; inside the gap
@@ -131,12 +135,15 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     }
     this.pending = false
     this.lastEmit = performance.now()
+    this.emitting = true
     try {
       this.emit('changed', this.snapshot())
     } catch (e) {
       try {
         this.onListenerError(e)
       } catch {}
+    } finally {
+      this.emitting = false
     }
   }
 

@@ -4,6 +4,8 @@ import { useEffect, useRef } from 'react'
 // Every enabled useEscape joins a stack in mount/enable order and one window listener calls the
 // newest. A handler further down (say, a text field clearing itself) can opt out with
 // preventDefault. Keys that are part of an IME composition are left alone.
+// Order is by enabling, not by mounting: a layer that is disabled and enabled again (say, a menu
+// that closes and reopens) moves to the top of the stack, above layers enabled in between.
 type Entry = { current: () => void }
 
 const stack: Entry[] = []

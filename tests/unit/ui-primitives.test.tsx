@@ -1,9 +1,9 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { useState } from 'react'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
-import { TOAST_MS, useUi } from '../../src/renderer/state'
+import { TOAST_MS, TOAST_RESUME_MIN_MS, useUi } from '../../src/renderer/state'
 import { Button } from '../../src/renderer/ui/Button'
 import { Dialog } from '../../src/renderer/ui/Dialog'
 import { Kbd } from '../../src/renderer/ui/Kbd'
@@ -41,6 +41,41 @@ function Host({ onClose }: { onClose?: () => void }) {
         >
           <input aria-label="Name" />
         </Dialog>
+      )}
+    </>
+  )
+}
+
+// A menu item opens the dialog and unmounts in the same commit, like the account menu does.
+function MenuFlow({
+  returnFocus,
+  tiles = true,
+}: {
+  returnFocus?: () => HTMLElement | null
+  tiles?: boolean
+}) {
+  const [open, setOpen] = useState(false)
+  return (
+    <>
+      {tiles && (
+        <>
+          <button type="button" data-account-tile="a">
+            Tile A
+          </button>
+          <button type="button" data-account-tile="b" data-active-tile="">
+            Tile B
+          </button>
+        </>
+      )}
+      <main>stage</main>
+      {open ? (
+        <Dialog title="Remove" onClose={() => setOpen(false)} returnFocus={returnFocus} footer={null}>
+          sure?
+        </Dialog>
+      ) : (
+        <button type="button" onClick={() => setOpen(true)}>
+          Menu item
+        </button>
       )}
     </>
   )
@@ -197,6 +232,72 @@ describe('Dialog', () => {
   })
 })
 
+describe('Dialog focus', () => {
+  test('hidden, aria-hidden, inert, type=hidden and fieldset-disabled controls are not tab stops', async () => {
+    const user = userEvent.setup()
+    render(
+      <Dialog title="T" onClose={() => {}} footer={<Button>OK</Button>}>
+        <input type="hidden" name="h" />
+        <button type="button" hidden>
+          Hidden
+        </button>
+        <div aria-hidden="true">
+          <button type="button">Covered</button>
+        </div>
+        <div inert>
+          <button type="button">Inert</button>
+        </div>
+        <fieldset disabled>
+          <button type="button">In disabled fieldset</button>
+        </fieldset>
+        <button type="button">Real</button>
+      </Dialog>,
+    )
+    expect(document.activeElement).toBe(screen.getByText('Real'))
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByText('OK'))
+    await user.tab()
+    expect(document.activeElement).toBe(screen.getByText('Real'))
+    await user.tab({ shift: true })
+    expect(document.activeElement).toBe(screen.getByText('OK'))
+  })
+
+  const closeFrom = async (ui: Parameters<typeof render>[0]) => {
+    const user = userEvent.setup()
+    render(ui)
+    await user.click(screen.getByText('Menu item'))
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+  }
+
+  test('opener gone: focus goes to returnFocus()', async () => {
+    await closeFrom(<MenuFlow returnFocus={() => screen.getByText('Tile A')} />)
+    expect(document.activeElement).toBe(screen.getByText('Tile A'))
+  })
+
+  test('opener gone, no returnFocus target: the active rail tile', async () => {
+    await closeFrom(<MenuFlow returnFocus={() => null} />)
+    expect(document.activeElement).toBe(screen.getByText('Tile B'))
+  })
+
+  test('a returnFocus target that cannot take focus is skipped', async () => {
+    const dead = document.createElement('button')
+    dead.disabled = true
+    document.body.append(dead)
+    await closeFrom(<MenuFlow returnFocus={() => dead} />)
+    expect(document.activeElement).toBe(screen.getByText('Tile B'))
+    dead.remove()
+  })
+
+  test('no tiles at all: the main region, never <body>', async () => {
+    await closeFrom(<MenuFlow tiles={false} />)
+    const main = screen.getByRole('main')
+    expect(document.activeElement).toBe(main)
+    expect(main.getAttribute('tabindex')).toBe('-1')
+  })
+})
+
 describe('useEscape', () => {
   test('only the newest enabled layer handles Esc', async () => {
     const user = userEvent.setup()
@@ -263,17 +364,114 @@ describe('useEscape', () => {
 })
 
 describe('Toasts', () => {
-  test('shows toasts in a live region and auto-dismisses them', () => {
+  const stack = () => screen.getByRole('region', { name: 'Messages' })
+  const status = () => screen.getByRole('status')
+
+  test('the visible stack is not live; a hidden status region mirrors only the text', () => {
     vi.useFakeTimers()
     render(<Toasts />)
-    const region = screen.getByRole('region', { name: 'Messages' })
-    expect(region.getAttribute('aria-live')).toBe('polite')
+    expect(stack().hasAttribute('aria-live')).toBe(false)
+    expect(status().className).toContain('sr-only')
+    expect(status().getAttribute('aria-atomic')).toBe('false')
     act(() => useUi.getState().toast('Quit Nexus first'))
-    expect(screen.getByText('Quit Nexus first')).toBeTruthy()
+    expect(within(stack()).getByText('Quit Nexus first')).toBeTruthy()
+    expect(within(stack()).getByRole('button', { name: 'Dismiss' })).toBeTruthy()
+    expect(status().textContent).toBe('Quit Nexus first')
+    expect(within(status()).queryByRole('button')).toBeNull()
+  })
+
+  test('a plain toast leaves after TOAST_MS', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('Saved'))
     act(() => vi.advanceTimersByTime(TOAST_MS - 1))
-    expect(screen.queryByText('Quit Nexus first')).not.toBeNull()
+    expect(within(stack()).queryByText('Saved')).not.toBeNull()
     act(() => vi.advanceTimersByTime(1))
-    expect(screen.queryByText('Quit Nexus first')).toBeNull()
+    expect(within(stack()).queryByText('Saved')).toBeNull()
+    expect(status().textContent).toBe('')
+  })
+
+  test('an error toast stays until dismissed', async () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('Could not reach WhatsApp', { error: true }))
+    act(() => vi.advanceTimersByTime(TOAST_MS * 10))
+    expect(within(stack()).getByText('Could not reach WhatsApp')).toBeTruthy()
+    fireEvent.click(within(stack()).getByRole('button', { name: 'Dismiss' }))
+    expect(within(stack()).queryByText('Could not reach WhatsApp')).toBeNull()
+  })
+
+  test('hover pauses the timer and leaving resumes it with the time that was left', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('Saved'))
+    act(() => vi.advanceTimersByTime(TOAST_MS - 2000))
+    fireEvent.mouseEnter(stack())
+    act(() => vi.advanceTimersByTime(TOAST_MS * 5))
+    expect(within(stack()).queryByText('Saved')).not.toBeNull()
+    fireEvent.mouseLeave(stack())
+    act(() => vi.advanceTimersByTime(1999))
+    expect(within(stack()).queryByText('Saved')).not.toBeNull()
+    act(() => vi.advanceTimersByTime(1))
+    expect(within(stack()).queryByText('Saved')).toBeNull()
+  })
+
+  test('resuming with almost nothing left still shows it for TOAST_RESUME_MIN_MS', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('Saved'))
+    act(() => vi.advanceTimersByTime(TOAST_MS - 10))
+    fireEvent.mouseEnter(stack())
+    fireEvent.mouseLeave(stack())
+    act(() => vi.advanceTimersByTime(TOAST_RESUME_MIN_MS - 1))
+    expect(within(stack()).queryByText('Saved')).not.toBeNull()
+    act(() => vi.advanceTimersByTime(1))
+    expect(within(stack()).queryByText('Saved')).toBeNull()
+  })
+
+  test('focus inside the stack pauses it; focus leaving resumes it', () => {
+    vi.useFakeTimers()
+    render(
+      <>
+        <button type="button">Elsewhere</button>
+        <Toasts />
+      </>,
+    )
+    act(() => useUi.getState().toast('Saved'))
+    act(() => within(stack()).getByRole('button', { name: 'Dismiss' }).focus())
+    expect(useUi.getState().toastsPaused).toBe(true)
+    act(() => vi.advanceTimersByTime(TOAST_MS * 5))
+    expect(within(stack()).queryByText('Saved')).not.toBeNull()
+    act(() => screen.getByRole('button', { name: 'Elsewhere' }).focus())
+    expect(useUi.getState().toastsPaused).toBe(false)
+    act(() => vi.advanceTimersByTime(TOAST_MS))
+    expect(within(stack()).queryByText('Saved')).toBeNull()
+  })
+
+  test('a toast that arrives while paused waits, then gets its full time', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('one'))
+    fireEvent.mouseEnter(stack())
+    act(() => useUi.getState().toast('two'))
+    act(() => vi.advanceTimersByTime(TOAST_MS * 2))
+    fireEvent.mouseLeave(stack())
+    act(() => vi.advanceTimersByTime(TOAST_MS - 1))
+    expect(within(stack()).queryByText('two')).not.toBeNull()
+    act(() => vi.advanceTimersByTime(1))
+    expect(within(stack()).queryByText('two')).toBeNull()
+  })
+
+  test('dismissing the last hovered toast does not leave the next one paused', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => useUi.getState().toast('one'))
+    fireEvent.mouseEnter(stack())
+    fireEvent.click(within(stack()).getByRole('button', { name: 'Dismiss' }))
+    expect(useUi.getState().toastsPaused).toBe(false)
+    act(() => useUi.getState().toast('two'))
+    act(() => vi.advanceTimersByTime(TOAST_MS))
+    expect(within(stack()).queryByText('two')).toBeNull()
   })
 
   test('the close button dismisses one toast', async () => {
@@ -283,16 +481,17 @@ describe('Toasts', () => {
       useUi.getState().toast('one')
       useUi.getState().toast('two')
     })
-    await user.click(screen.getAllByRole('button', { name: 'Dismiss' })[0])
-    expect(screen.queryByText('one')).toBeNull()
-    expect(screen.getByText('two')).toBeTruthy()
+    await user.click(within(stack()).getAllByRole('button', { name: 'Dismiss' })[0])
+    expect(within(stack()).queryByText('one')).toBeNull()
+    expect(within(stack()).getByText('two')).toBeTruthy()
   })
 
   test('names read in their own direction', () => {
     render(<Toasts />)
     act(() => useUi.getState().toast('محمد is offline'))
-    const p = screen.getByText('محمد is offline')
+    const p = within(stack()).getByText('محمد is offline')
     expect(p.getAttribute('dir')).toBe('auto')
     expect(p.className).toContain('bidi-plain')
+    expect(within(status()).getByText('محمد is offline').getAttribute('dir')).toBe('auto')
   })
 })

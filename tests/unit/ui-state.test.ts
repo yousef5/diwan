@@ -69,6 +69,42 @@ describe('ui state', () => {
     expect(ui().dialog).toBeNull()
   })
 
+  test('setSnap drops a confirm dialog whose account is gone; one without an account stays', () => {
+    const confirm = {
+      kind: 'confirm' as const,
+      title: 'Remove b?',
+      body: '',
+      confirmLabel: 'Remove',
+      danger: true,
+      onConfirm: () => {},
+    }
+    ui().setSnap(snap(['a', 'b']))
+    ui().openDialog({ ...confirm, accountId: 'b' })
+    ui().setSnap(snap(['a', 'b']))
+    expect(ui().dialog).toMatchObject({ kind: 'confirm', accountId: 'b' })
+    ui().setSnap(snap(['a']))
+    expect(ui().dialog).toBeNull()
+
+    ui().openDialog(confirm)
+    ui().setSnap(snap([]))
+    expect(ui().dialog).toMatchObject({ kind: 'confirm', title: 'Remove b?' })
+  })
+
+  test('menuTrigger remembers the menu account past the menu, until that account is gone', () => {
+    expect(ui().menuTrigger).toBeNull()
+    ui().setSnap(snap(['a', 'b']))
+    ui().openMenu({ id: 'b', x: 0, y: 0 })
+    ui().openDialog({ kind: 'edit', id: 'b' }) // closes the menu
+    expect(ui().menu).toBeNull()
+    expect(ui().menuTrigger).toBe('b')
+    ui().openMenu(null)
+    expect(ui().menuTrigger).toBe('b')
+    ui().openMenu({ id: 'a', x: 0, y: 0 })
+    expect(ui().menuTrigger).toBe('a')
+    ui().setSnap(snap(['b']))
+    expect(ui().menuTrigger).toBeNull()
+  })
+
   test('setSnap keeps other dialogs', () => {
     ui().openDialog({ kind: 'import' })
     ui().setSnap(snap([]))
@@ -133,6 +169,38 @@ describe('ui state', () => {
   test(`at most ${MAX_TOASTS} toasts; the oldest goes first`, () => {
     for (let i = 0; i < MAX_TOASTS + 2; i++) ui().toast(`t${i}`)
     expect(ui().toasts.map((t) => t.text)).toEqual(Array.from({ length: MAX_TOASTS }, (_, i) => `t${i + 2}`))
+  })
+
+  test('an error toast has no timer: it stays until dismissed', () => {
+    ui().toast('Could not reach WhatsApp', { error: true })
+    expect(ui().toasts).toMatchObject([{ text: 'Could not reach WhatsApp', error: true }])
+    vi.advanceTimersByTime(TOAST_MS * 100)
+    expect(ui().toasts).toHaveLength(1)
+    ui().dismissToast(ui().toasts[0].id)
+    expect(ui().toasts).toEqual([])
+  })
+
+  test('the same text as an error replaces a plain toast and stays', () => {
+    ui().toast('Offline')
+    ui().toast('Offline', { error: true })
+    vi.advanceTimersByTime(TOAST_MS * 2)
+    expect(ui().toasts).toMatchObject([{ text: 'Offline', error: true }])
+  })
+
+  test('setToastsPaused stops every timer and resumes with what was left', () => {
+    ui().toast('one')
+    vi.advanceTimersByTime(1000)
+    ui().toast('two')
+    vi.advanceTimersByTime(1000)
+    ui().setToastsPaused(true)
+    ui().setToastsPaused(true) // idempotent
+    vi.advanceTimersByTime(TOAST_MS * 10)
+    expect(ui().toasts.map((t) => t.text)).toEqual(['one', 'two'])
+    ui().setToastsPaused(false)
+    vi.advanceTimersByTime(TOAST_MS - 2000)
+    expect(ui().toasts.map((t) => t.text)).toEqual(['two'])
+    vi.advanceTimersByTime(1000)
+    expect(ui().toasts).toEqual([])
   })
 
   test('toast ids are unique', () => {

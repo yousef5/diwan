@@ -68,7 +68,8 @@ export function AccountTile({
         {(describedBy) => (
           <button
             type="button"
-            data-account-id={account.id}
+            data-account-tile={account.id}
+            data-active-tile={active ? '' : undefined}
             aria-label={tileLabel(account, runtime)}
             aria-describedby={describedBy}
             aria-current={active ? 'true' : undefined}

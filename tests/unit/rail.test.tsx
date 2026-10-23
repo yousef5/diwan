@@ -3,7 +3,9 @@ import { act, cleanup, fireEvent, render, screen, within } from '@testing-librar
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { moveId, Rail } from '../../src/renderer/components/Rail'
+import { accountTile } from '../../src/renderer/focus'
 import { useUi } from '../../src/renderer/state'
+import { Dialog } from '../../src/renderer/ui/Dialog'
 import type { Account, AccountRuntime, Snapshot } from '../../src/shared/types'
 
 const initial = useUi.getState()
@@ -106,7 +108,7 @@ describe('Rail', () => {
   test('tiles use the wide focus ring so focus never hides in the active ring', () => {
     show()
     for (const id of ['a', 'b', 'c', 'd']) {
-      expect(document.querySelector(`[data-account-id="${id}"]`)?.className).toContain('focus-ring-wide')
+      expect(document.querySelector(`[data-account-tile="${id}"]`)?.className).toContain('focus-ring-wide')
     }
   })
 
@@ -334,5 +336,90 @@ describe('Rail reordering', () => {
     await user.keyboard('{Alt>}{ArrowUp}{/Alt}')
     await user.keyboard('{ArrowDown}')
     expect(invoke).not.toHaveBeenCalled()
+  })
+})
+
+// The account menu (Task 28) is stood in for by a one-item menu; the real one opens dialogs the
+// same way: openDialog() closes the menu, so the item that had focus unmounts.
+function FakeMenu() {
+  const menu = useUi((s) => s.menu)
+  const openDialog = useUi((s) => s.openDialog)
+  if (!menu) return null
+  return (
+    <div role="menu">
+      <button
+        type="button"
+        role="menuitem"
+        onClick={() =>
+          openDialog({
+            kind: 'confirm',
+            accountId: menu.id,
+            title: 'Remove?',
+            body: '',
+            confirmLabel: 'Remove',
+            danger: true,
+            onConfirm: () => {},
+          })
+        }
+      >
+        Remove…
+      </button>
+    </div>
+  )
+}
+
+function DialogHost() {
+  const dialog = useUi((s) => s.dialog)
+  const trigger = useUi((s) => s.menuTrigger)
+  if (!dialog) return null
+  return (
+    <Dialog title="Remove?" footer={null} returnFocus={() => accountTile(trigger)}>
+      sure?
+    </Dialog>
+  )
+}
+
+describe('focus after a dialog opened from the account menu', () => {
+  const openFromMenu = async (name: RegExp) => {
+    const user = userEvent.setup()
+    act(() => useUi.getState().setSnap(snapshot()))
+    render(
+      <>
+        <Rail />
+        <main>stage</main>
+        <FakeMenu />
+        <DialogHost />
+      </>,
+    )
+    tile(name).focus()
+    fireEvent.contextMenu(tile(name), { clientX: 30, clientY: 200 })
+    await user.click(screen.getByRole('menuitem', { name: 'Remove…' }))
+    expect(screen.queryByRole('menu')).toBeNull()
+    expect(screen.getByRole('dialog')).toBeTruthy()
+    return user
+  }
+
+  test('tile → menu → dialog → Esc focuses that tile again', async () => {
+    const user = await openFromMenu(/^Family/)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(tile(/^Family/))
+  })
+
+  test('the account is removed while its dialog is open: the active tile gets focus', async () => {
+    await openFromMenu(/^Family/)
+    act(() => {
+      const s = snapshot()
+      useUi.getState().setSnap({ ...s, accounts: s.accounts.filter((a) => a.id !== 'c') })
+    })
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(tile(/^Pharmacy/))
+  })
+
+  test('the last account is removed: the main region gets focus, not <body>', async () => {
+    await openFromMenu(/^Pharmacy/)
+    act(() => useUi.getState().setSnap(snapshot({ accounts: [], runtime: {}, activeId: null })))
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('main'))
   })
 })

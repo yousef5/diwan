@@ -446,6 +446,42 @@ describe('StateHub push contract', () => {
     expect(got).toHaveLength(1)
   })
 
+  test('a stale end-of-tick push does not fire once flush() has sent it (seq guard)', async () => {
+    vi.useFakeTimers()
+    const { h, a, got } = await justPushed()
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS) // out of the first gap
+    h.updateAccount(a.id, { name: 'Renamed' }) // queues an end-of-tick push
+    h.flush() // ...which goes out now, so the queued microtask is stale
+    h.setRuntime(a.id, { unread: 1 }) // inside the new gap: must wait for its end
+    await vi.advanceTimersByTimeAsync(0)
+    expect(got.map((s) => s.runtime[a.id]?.unread)).toEqual([0])
+    await vi.advanceTimersByTimeAsync(SNAPSHOT_GAP_MS)
+    expect(got.map((s) => s.runtime[a.id]?.unread)).toEqual([0, 1])
+    expect(got[0]?.accounts[0]?.name).toBe('Renamed')
+  })
+
+  test('a listener that changes state and flushes cannot deliver snapshots out of order', async () => {
+    vi.useFakeTimers()
+    const h = throttled()
+    const a = h.addAccount('A', '#3b82f6')
+    await flushMicrotasks()
+    const seen: string[] = []
+    let once = true
+    // The first listener reacts to a push by renaming and flushing (as sendShell would).
+    h.on('changed', () => {
+      if (!once) return
+      once = false
+      h.updateAccount(a.id, { name: 'B' })
+      h.flush()
+    })
+    h.on('changed', (s) => seen.push(s.accounts[0]?.name ?? '?'))
+    h.updateAccount(a.id, { muted: true })
+    await flushMicrotasks()
+    expect(seen).toEqual(['A', 'B'])
+    await vi.advanceTimersByTimeAsync(10 * SNAPSHOT_GAP_MS)
+    expect(seen).toEqual(['A', 'B'])
+  })
+
   test('a throwing listener keeps the chain going (gap 50)', async () => {
     vi.useFakeTimers()
     const errors: unknown[] = []

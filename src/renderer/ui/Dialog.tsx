@@ -1,28 +1,39 @@
 import { type KeyboardEvent, type ReactNode, useCallback, useEffect, useId, useRef, useState } from 'react'
+import { activeTile, focusFirst, mainRegion } from '../focus'
 import { useUi } from '../state'
 import { useEscape } from './useEscape'
 
 const FOCUSABLE =
-  'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+  'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
+// :disabled also catches controls inside a disabled <fieldset>.
 const focusables = (root: HTMLElement) =>
-  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter((el) => !el.closest('[inert]'))
+  Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+    (el) => !el.matches(':disabled') && !el.closest('[hidden], [inert], [aria-hidden="true"]'),
+  )
 
 // A modal dialog. Focus moves in when it opens (to [data-autofocus], else the first control, else
-// the panel), Tab and Shift+Tab stay inside, Esc or a click on the backdrop closes it, and focus
-// goes back to whatever had it before. Closing defaults to clearing the UI store's dialog.
+// the panel), Tab and Shift+Tab stay inside, Esc or a click on the backdrop closes it. Closing
+// defaults to clearing the UI store's dialog.
+//
+// On close, focus goes back to whatever had it before, if that is still in the document. A dialog
+// opened from the account menu was opened by a menu item that is already gone, so then it tries
+// `returnFocus()` (say, that account's rail tile), then the active rail tile, then the main
+// region. Focus never drops to <body>.
 export function Dialog({
   title,
   children,
   footer,
   width = 440,
   onClose,
+  returnFocus,
 }: {
   title: string
   children: ReactNode
   footer: ReactNode
   width?: number
   onClose?: () => void
+  returnFocus?: () => HTMLElement | null
 }) {
   const close = useCallback(() => (onClose ? onClose() : useUi.getState().openDialog(null)), [onClose])
   useEscape(close)
@@ -30,6 +41,9 @@ export function Dialog({
   const panel = useRef<HTMLDivElement>(null)
   // Read during the first render, before any child autoFocus runs in the commit.
   const [returnTo] = useState(() => document.activeElement)
+  // Read at close time, so the newest callback wins.
+  const returnFocusRef = useRef(returnFocus)
+  returnFocusRef.current = returnFocus
 
   useEffect(() => {
     const root = panel.current
@@ -38,7 +52,12 @@ export function Dialog({
       target.focus()
     }
     return () => {
-      if (returnTo instanceof HTMLElement && returnTo.isConnected) returnTo.focus()
+      focusFirst([
+        () => (returnTo === document.body ? null : returnTo),
+        () => returnFocusRef.current?.(),
+        activeTile,
+        mainRegion,
+      ])
     }
   }, [returnTo])
 
