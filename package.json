@@ -20,7 +20,7 @@
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "electron-vite build && playwright test",
+    "e2e": "electron-vite build && sh tests/e2e/run.sh",
     "package": "electron-vite build && electron-builder --linux dir --publish never",
     "package:appimage": "electron-vite build && electron-builder --linux AppImage --publish never"
   },
