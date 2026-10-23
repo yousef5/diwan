@@ -7,6 +7,7 @@ import { Rail } from './components/Rail'
 import { RecoveryBanner } from './components/RecoveryBanner'
 import { Stage } from './components/Stage'
 import { WindowControls } from './components/WindowControls'
+import { importOffered } from './platform'
 import { SettingsPage } from './settings/SettingsPage'
 import { useUi } from './state'
 import { trayBadges } from './trayBadges'
@@ -61,7 +62,7 @@ function useTrayBadges(): void {
   }, [])
 }
 
-// Offer the Nexus import once per launch, on a run that has no accounts yet (the first one).
+// Offer the Nexus import once per launch, on a run that has no accounts yet (the first one). Linux only.
 function useImportOffer(): void {
   useEffect(() => {
     let offered = false
@@ -69,7 +70,7 @@ function useImportOffer(): void {
       const s = useUi.getState()
       if (offered || !s.snap) return
       offered = true
-      if (s.snap.importAvailable && s.snap.accounts.length === 0 && !s.dialog && !s.snap.recovery) {
+      if (importOffered(s.snap) && s.snap.accounts.length === 0 && !s.dialog && !s.snap.recovery) {
         s.openDialog({ kind: 'import' })
       }
     }

@@ -3,6 +3,7 @@ import type { Account, AccountRuntime, ViewState } from '../../shared/types'
 import { unreadTotal } from '../../shared/unread'
 import { call } from '../api'
 import { Icon, type IconName } from '../icons'
+import { hasCaptionButtons } from '../platform'
 import { useUi } from '../state'
 
 export const STATUS: Record<ViewState, { label: string; dot: string }> = {
@@ -61,7 +62,8 @@ function BarButton({
 
 // The 48 px bar above WhatsApp (design B): who you're looking at and its connection state on the
 // left; Inbox (unread across accounts), zoom, mute, reload and more on the right. The bar drags the
-// frameless window; its controls don't.
+// frameless window; its controls don't. On Windows the native caption buttons sit over its right
+// end, so the controls keep clear of them.
 export function ContextBar() {
   const snap = useUi((s) => s.snap)
   const openMenu = useUi((s) => s.openMenu)
@@ -72,6 +74,7 @@ export function ContextBar() {
   const zoom = zoomPercent(account.zoom)
   const total = unreadTotal(snap.accounts, snap.runtime)
   const next = nextUnread(snap.accounts, snap.runtime, id)
+  const right = hasCaptionButtons(snap) ? 'pr-[calc(0.75rem+var(--caption-w))]' : 'pr-3'
 
   const openMore = (e: MouseEvent<HTMLButtonElement>) => {
     const r = e.currentTarget.getBoundingClientRect()
@@ -79,7 +82,9 @@ export function ContextBar() {
   }
 
   return (
-    <header className="drag flex h-12 shrink-0 items-center gap-3 border-b border-line bg-bg-1 pr-3 pl-[18px]">
+    <header
+      className={`drag flex h-12 shrink-0 items-center gap-3 border-b border-line bg-bg-1 ${right} pl-[18px]`}
+    >
       <span
         aria-hidden="true"
         style={{ background: account.color }}

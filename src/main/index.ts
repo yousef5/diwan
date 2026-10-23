@@ -11,6 +11,7 @@ import { sweepStaleDownloadParts } from './downloads'
 import { applyGuestPreferences, isAllowedGuest, partitionOf } from './guest-config'
 import { resetCrashes, wireGuest } from './guests'
 import { applyImport, fsPlanDeps, nexusRunning, sweepPartials } from './importer/apply'
+import { importSupported, linuxOnly } from './importer/gate'
 import { hasImportable, planForApply, planImport } from './importer/plan'
 import { forgetAvatar, registerGuestIpc } from './ipc-guest'
 import { registerShellIpc } from './ipc-shell'
@@ -28,6 +29,7 @@ import { StateHub } from './state'
 import { Store } from './store/store'
 import { TrayController } from './tray'
 import { visibleBounds } from './window-bounds'
+import { windowChrome } from './window-chrome'
 
 // Tests and side-by-side runs use a throwaway profile.
 if (process.env.DIWAN_USER_DATA) app.setPath('userData', process.env.DIWAN_USER_DATA)
@@ -51,6 +53,7 @@ function start(): void {
   // Offered only when Nexus has an account that can actually be imported (installed is not enough:
   // it may have no signed-in accounts, or only ones already in Diwan).
   hub.importAvailable =
+    importSupported(hub.platform) &&
     !store.get().importedFromNexus &&
     hasImportable({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources())
   hub.notify()
@@ -230,7 +233,7 @@ function start(): void {
       minWidth: 760,
       minHeight: 520,
       show: false,
-      frame: false,
+      ...windowChrome(hub.platform),
       backgroundColor: '#0f0f11',
       title: 'Diwan',
       icon: appIcon,
@@ -416,7 +419,7 @@ function start(): void {
         removeAccount,
         forgetNotifications: (id) => notifier.forgetAccount(id),
         sendShell,
-        planImport: () => {
+        planImport: linuxOnly(hub.platform, () => {
           const plan = planImport(
             { nexusConfig: paths.nexusConfig, nexusPartitions },
             fsPlanDeps,
@@ -425,8 +428,8 @@ function start(): void {
           // Everything is already in (e.g. a crash just before markImported): stop offering the import.
           if (plan.reason === 'Already imported' && hub.importAvailable) hub.markImported()
           return { ...plan, nexusRunning: nexusRunning(paths.nexusUserData) }
-        },
-        applyImport: async () => {
+        }),
+        applyImport: linuxOnly(hub.platform, async () => {
           if (nexusRunning(paths.nexusUserData)) throw new Error('Quit Nexus first, then import again.')
           const plan = planForApply(
             planImport({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources()),
@@ -438,7 +441,7 @@ function start(): void {
             log,
             isNexusRunning: () => nexusRunning(paths.nexusUserData),
           })
-        },
+        }),
       })
       registerGuestIpc({ hub, registry, notifier, avatars, log })
 

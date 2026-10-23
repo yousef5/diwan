@@ -117,6 +117,23 @@ describe('opening, closing and focus', () => {
     expect(screen.getByRole('heading', { name: 'Settings' }).className).toContain('drag')
   })
 
+  test('Windows: no window-controls bar to sit under, and Close keeps clear of the caption buttons', () => {
+    setSnap({ platform: 'win32', settings: { ...SETTINGS, showWindowControls: true } })
+    render(<App />)
+    act(() => useUi.getState().openSettings())
+    expect(page().className).toContain('top-0')
+    const close = screen.getByRole('button', { name: 'Close settings' })
+    expect(close.className).toContain('right-[calc(1.25rem+var(--caption-w))]')
+    expect(close.className).not.toMatch(/(^|\s)right-5(\s|$)/)
+  })
+
+  test('Linux: Close sits in its usual corner', () => {
+    openAt('general')
+    const close = screen.getByRole('button', { name: 'Close settings' })
+    expect(close.className).toContain('right-5')
+    expect(close.className).not.toContain('caption-w')
+  })
+
   test('focus moves to the current section on open and back to the opener on close', async () => {
     const user = userEvent.setup()
     openAt('notifications')
@@ -449,10 +466,47 @@ describe('data and about', () => {
     expect(useUi.getState().dialog).toEqual({ kind: 'import' })
   })
 
+  test('Data says where the data folder really is', () => {
+    openAt('data', { dataDir: 'C:\\Users\\u\\AppData\\Roaming\\Diwan' })
+    const path = screen.getByText('C:\\Users\\u\\AppData\\Roaming\\Diwan')
+    expect(path.getAttribute('dir')).toBe('ltr')
+    expect(page().textContent).toContain(
+      'Everything stays on this computer, in C:\\Users\\u\\AppData\\Roaming\\Diwan.',
+    )
+    expect(page().textContent).not.toContain('~/.config')
+  })
+
+  test('Windows: no Nexus import row (Nexus was Linux-only); the data folder row stays', () => {
+    openAt('data', { platform: 'win32' })
+    expect(screen.queryByRole('button', { name: 'Import from Nexus' })).toBeNull()
+    expect(screen.queryByText('Import from Nexus')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Open the data folder' })).toBeTruthy()
+  })
+
+  test('Windows: no "Show window controls" switch, and no Linux desktop wording', () => {
+    openAt('general', { platform: 'win32' })
+    expect(screen.queryByRole('switch', { name: 'Show window controls' })).toBeNull()
+    expect(page().textContent).not.toContain('Hyprland')
+    cleanup()
+    openAt('notifications', { platform: 'win32' })
+    expect(page().textContent).toContain('Flashes Diwan’s taskbar button')
+    expect(page().textContent).not.toContain('workspace')
+  })
+
+  test('Linux keeps the window-controls switch and the workspace wording', () => {
+    openAt('general')
+    expect(sw('Show window controls')).toBeTruthy()
+    cleanup()
+    openAt('notifications')
+    expect(page().textContent).toContain('Highlights Diwan’s workspace in the bar')
+  })
+
   test('About shows the version and opens the folder with the logs', async () => {
     const user = userEvent.setup()
     openAt('about')
     expect(screen.getByText(`Version ${pkg.version}`)).toBeTruthy()
+    expect(page().textContent).toContain('Multi-account WhatsApp Web for your desktop.')
+    expect(page().textContent).not.toContain('Linux')
     const open = screen.getByRole('button', { name: 'Open the data folder' })
     expect(document.getElementById(open.getAttribute('aria-describedby') ?? '')?.textContent).toMatch(/logs/)
     await user.click(open)

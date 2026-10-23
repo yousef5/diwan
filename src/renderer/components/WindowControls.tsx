@@ -1,13 +1,14 @@
 import { call } from '../api'
 import { Icon } from '../icons'
+import { windowControlsShown } from '../platform'
 import { useUi } from '../state'
 
 // The window is always frameless (main creates it with frame: false): on Hyprland the compositor
 // draws the frame. This 32 px bar with minimize, maximize and close is for floating window
 // managers, only when Settings → General → "Show window controls" is on. The bar itself drags
-// the window.
+// the window. Never on Windows, which has its own caption buttons (titleBarOverlay).
 export function WindowControls() {
-  const show = useUi((s) => s.snap?.settings.showWindowControls ?? false)
+  const show = useUi((s) => windowControlsShown(s.snap))
   if (!show) return null
   const base = 'no-drag flex h-8 w-11 items-center justify-center text-fg-dim'
   const btn = `${base} hover:bg-bg-3 hover:text-fg`

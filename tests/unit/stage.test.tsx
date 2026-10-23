@@ -392,6 +392,21 @@ describe('ContextBar', () => {
     expect(screen.getByTestId('connection').querySelector('span')?.className).toContain(dot)
   })
 
+  test('Linux: the usual right padding, nothing reserved for caption buttons', () => {
+    setSnap()
+    render(<ContextBar />)
+    expect(bar().className).toContain('pr-3')
+    expect(bar().className).not.toContain('caption-w')
+  })
+
+  test('Windows: the right end keeps clear of the native caption buttons, and the bar still drags', () => {
+    setSnap({ platform: 'win32' })
+    render(<ContextBar />)
+    expect(bar().className).toContain('pr-[calc(0.75rem+var(--caption-w))]')
+    expect(bar().className).not.toMatch(/(^|\s)pr-3(\s|$)/)
+    expect(bar().className).toContain('drag')
+  })
+
   test('a muted account shows the Muted tag and an Unmute button', async () => {
     setSnap({ activeId: C })
     render(<ContextBar />)

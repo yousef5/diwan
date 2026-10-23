@@ -175,8 +175,7 @@ export function ImportDialog() {
         {imported.length > 0 && (
           <p className="mt-3 mb-0">
             Don’t open these accounts in Nexus any more: the same login running in two apps can make WhatsApp
-            sign both out. To uninstall Nexus run{' '}
-            <code className="font-mono text-[12px] text-fg select-text">sudo pacman -R multiwhatsapp</code>.
+            sign both out. You can now uninstall Nexus with your package manager.
           </p>
         )}
       </Dialog>

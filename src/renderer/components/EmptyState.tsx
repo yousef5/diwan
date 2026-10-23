@@ -1,10 +1,11 @@
 import { DiwanMark } from '../icons'
+import { importOffered } from '../platform'
 import { useUi } from '../state'
 import { Button } from '../ui/Button'
 
 // The stage before any account exists. Adding is off in recovery mode (nothing could be saved).
 export function EmptyState() {
-  const importAvailable = useUi((s) => s.snap?.importAvailable ?? false)
+  const importAvailable = useUi((s) => importOffered(s.snap))
   const recovery = useUi((s) => s.snap?.recovery ?? false)
   const openDialog = useUi((s) => s.openDialog)
   return (
