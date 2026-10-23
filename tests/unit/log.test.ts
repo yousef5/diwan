@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { createLogger } from '../../src/main/log'
+import { isWindows } from './helpers/platform'
 
 test('writes lines and rotates at the size limit, keeping 3 old files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'diwan-log-'))
@@ -95,7 +96,7 @@ test('does not throw when the dir is a regular file', () => {
   expect(() => log.info('x')).not.toThrow()
 })
 
-test('log file is private (0600)', () => {
+test.skipIf(isWindows)('log file is private (0600)', () => {
   const { dir, log } = setup()
   log.info('x')
   expect(statSync(join(dir, 'main.log')).mode & 0o777).toBe(0o600)

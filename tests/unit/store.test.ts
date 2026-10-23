@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Store } from '../../src/main/store/store'
+import { canDenyAccess, isWindows } from './helpers/platform'
 
 const id = '649d14d5-ebb9-4ed6-9725-633b89c6ceac'
 const account = {
@@ -172,8 +173,7 @@ describe('Store', () => {
     expect(read('diwan.json.bak').accounts).toHaveLength(1)
   })
 
-  test('read-only directory: update throws, data stays in memory, retry works', () => {
-    if (process.getuid?.() === 0) return
+  test.skipIf(!canDenyAccess)('read-only directory: update throws, data stays in memory, retry works', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)
@@ -418,7 +418,7 @@ describe('Store', () => {
     expect(s.get().accounts[0].name).toBe('Work')
   })
 
-  test('the saved file is mode 0600', () => {
+  test.skipIf(isWindows)('the saved file is mode 0600', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)
@@ -491,8 +491,7 @@ describe('Store', () => {
     }
   })
 
-  test('an unreadable main + good .bak → recovery, nothing renamed', () => {
-    if (process.getuid?.() === 0) return
+  test.skipIf(!canDenyAccess)('an unreadable main + good .bak → recovery, nothing renamed', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)

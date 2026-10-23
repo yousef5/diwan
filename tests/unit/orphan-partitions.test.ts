@@ -130,7 +130,7 @@ describe('sweepRemovedAccountFolders', () => {
     const p = profile({ main: file([], [GONE, B]), folders: [] })
     const elsewhere = tmp()
     writeFileSync(join(elsewhere, 'precious'), 'x')
-    symlinkSync(elsewhere, join(p.parts, `acc-${GONE}`))
+    symlinkSync(elsewhere, join(p.parts, `acc-${GONE}`), 'junction') // junction: no privilege needed on Windows
     writeFileSync(join(p.parts, `acc-${B}`), 'not a folder')
     await expect(sweepRemovedAccountFolders(p.parts, p.launch())).resolves.toEqual([])
     expect(existsSync(join(elsewhere, 'precious'))).toBe(true)

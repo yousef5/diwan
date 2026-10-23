@@ -1,0 +1,6 @@
+# LF everywhere, also in a Windows checkout (core.autocrlf): Biome, the tests and the shell scripts
+# expect LF, and packaging scripts must never get CRLF.
+* text=auto eol=lf
+*.sh text eol=lf
+*.png binary
+*.ico binary

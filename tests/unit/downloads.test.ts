@@ -1,6 +1,10 @@
-import { basename, dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { sanitizeFilename, uniquePath } from '../../src/main/downloads'
+
+// The downloads folder, spelled the host's way (\\d on Windows): uniquePath joins with node:path.
+const D = join('/', 'd')
+const inD = (name: string) => join(D, name)
 
 describe('sanitizeFilename', () => {
   test.each([
@@ -55,14 +59,14 @@ describe('sanitizeFilename on Windows-unsafe names', () => {
 
 describe('uniquePath', () => {
   test('free name is kept', () => {
-    expect(uniquePath('/d', 'a.pdf', () => false)).toBe('/d/a.pdf')
+    expect(uniquePath(D, 'a.pdf', () => false)).toBe(inD('a.pdf'))
   })
   test('taken names get (1), (2)…', () => {
-    const taken = new Set(['/d/a.pdf', '/d/a (1).pdf'])
-    expect(uniquePath('/d', 'a.pdf', (p) => taken.has(p))).toBe('/d/a (2).pdf')
+    const taken = new Set([inD('a.pdf'), inD('a (1).pdf')])
+    expect(uniquePath(D, 'a.pdf', (p) => taken.has(p))).toBe(inD('a (2).pdf'))
   })
   test('no extension', () => {
-    expect(uniquePath('/d', 'README', (p) => p === '/d/README')).toBe('/d/README (1)')
+    expect(uniquePath(D, 'README', (p) => p === inD('README'))).toBe(inD('README (1)'))
   })
 })
 
@@ -83,9 +87,9 @@ describe('hostile names', () => {
     '../../etc/passwd',
     '..\\..\\win',
   ])('%j stays inside the folder', (input) => {
-    const out = uniquePath('/d', input, () => false)
+    const out = uniquePath(D, input, () => false)
     const name = basename(out)
-    expect(dirname(out)).toBe('/d')
+    expect(dirname(out)).toBe(D)
     expect(name).not.toBe('.')
     expect(name).not.toBe('..')
     expect(name.startsWith('.')).toBe(false)
@@ -103,8 +107,8 @@ describe('byte-safe length', () => {
     const clean = sanitizeFilename(long)
     expect(bytes(clean)).toBeLessThanOrEqual(255)
     expect(clean.endsWith('.pdf')).toBe(true)
-    const taken = new Set([`/d/${clean}`])
-    const out = basename(uniquePath('/d', long, (p) => taken.has(p)))
+    const taken = new Set([inD(clean)])
+    const out = basename(uniquePath(D, long, (p) => taken.has(p)))
     expect(bytes(out)).toBeLessThanOrEqual(255)
     expect(out.endsWith(' (1).pdf')).toBe(true)
   })
@@ -118,11 +122,11 @@ describe('byte-safe length', () => {
     expect(sanitizeFilename('صورة.jpg')).toBe('صورة.jpg')
   })
   test('loop is capped and falls back to a timestamp', () => {
-    const out = basename(uniquePath('/d', 'a.pdf', () => true))
+    const out = basename(uniquePath(D, 'a.pdf', () => true))
     expect(out).toMatch(/^a \(\d{13}\)\.pdf$/)
   })
   test('timestamp fallback of a max-length name still fits', () => {
-    const out = basename(uniquePath('/d', `${'ص'.repeat(254)}.pdf`, () => true))
+    const out = basename(uniquePath(D, `${'ص'.repeat(254)}.pdf`, () => true))
     expect(bytes(out)).toBeLessThanOrEqual(255)
   })
 })
