@@ -23,7 +23,10 @@ function normalize(img: NativeImage): NativeImage | null {
 
 // <userData>/avatars/<accountId>.png, square 128 px. Returned as data URLs for the shell.
 export class AvatarFiles {
-  constructor(private readonly dir: string) {
+  constructor(
+    private readonly dir: string,
+    private readonly platform: NodeJS.Platform = process.platform,
+  ) {
     mkdirSync(dir, { recursive: true, mode: 0o700 })
   }
 
@@ -40,7 +43,7 @@ export class AvatarFiles {
     const file = this.file(id)
     const tmp = `${file}.tmp`
     writeFileSync(tmp, n.toPNG(), { mode: 0o600 })
-    retrySync(() => renameSync(tmp, file))
+    retrySync(() => renameSync(tmp, file), { platform: this.platform })
     return n.toDataURL()
   }
 

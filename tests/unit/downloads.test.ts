@@ -28,7 +28,24 @@ describe('sanitizeFilename on Windows-unsafe names', () => {
     ['COM10.txt', 'COM10.txt'],
     ['console.txt', 'console.txt'],
     ['my con.txt', 'my con.txt'],
+    ['CONIN$', 'CONIN$_'],
+    ['conout$.txt', 'conout$_.txt'],
+    ['COM¹', 'COM¹_'],
+    ['lpt³.log', 'lpt³_.log'],
+    ['COM⁴.txt', 'COM⁴.txt'],
+    ['CONIN.txt', 'CONIN.txt'],
   ])('%s → %s', (input, out) => expect(sanitizeFilename(input)).toBe(out))
+
+  test('truncation never leaves a trailing dot or space for Windows to drop', () => {
+    const spaced = sanitizeFilename(`${'a'.repeat(246)} ${'b'.repeat(20)}`)
+    expect(spaced).toBe('a'.repeat(246))
+    // the long tail after the dot is no extension, so it is cut like the rest of the base
+    const dotted = sanitizeFilename(`${'a'.repeat(246)}.${'b'.repeat(30)}`)
+    expect(dotted).toBe('a'.repeat(246))
+    const withExt = sanitizeFilename(`${'a'.repeat(240)}  .  ${'b'.repeat(20)}.pdf`)
+    expect(withExt).toMatch(/^a+\.pdf$/)
+    expect(Buffer.byteLength(withExt, 'utf8')).toBeLessThanOrEqual(255)
+  })
 
   test('a long reserved-looking name still fits in 255 bytes', () => {
     const clean = sanitizeFilename(`con.${'x'.repeat(300)}`)

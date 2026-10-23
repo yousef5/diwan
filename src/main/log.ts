@@ -61,9 +61,13 @@ function formatExtra(extra: unknown): string {
 }
 
 // Plain rotating file log in <userData>/logs. Callers never pass message text, only metadata.
-export function createLogger(dir: string, opts: { maxBytes?: number; echo?: boolean } = {}): Logger {
+export function createLogger(
+  dir: string,
+  opts: { maxBytes?: number; echo?: boolean; platform?: NodeJS.Platform } = {},
+): Logger {
   const maxBytes = opts.maxBytes ?? 1_000_000
   const echo = opts.echo ?? true
+  const retry = { platform: opts.platform }
   const file = join(dir, 'main.log')
   try {
     mkdirSync(dir, { recursive: true, mode: 0o700 })
@@ -77,8 +81,8 @@ export function createLogger(dir: string, opts: { maxBytes?: number; echo?: bool
     }
     rmSync(`${file}.${KEEP}`, { force: true })
     for (let i = KEEP - 1; i >= 1; i--)
-      if (existsSync(`${file}.${i}`)) retrySync(() => renameSync(`${file}.${i}`, `${file}.${i + 1}`))
-    retrySync(() => renameSync(file, `${file}.1`))
+      if (existsSync(`${file}.${i}`)) retrySync(() => renameSync(`${file}.${i}`, `${file}.${i + 1}`), retry)
+    retrySync(() => renameSync(file, `${file}.1`), retry)
   }
 
   const write = (level: 'info' | 'warn' | 'error', msg: string, extra?: unknown) => {

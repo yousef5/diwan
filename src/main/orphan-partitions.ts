@@ -32,6 +32,13 @@ export function planFolderRemovals(
   return plan
 }
 
+// Whether removing an account deletes its folder right away. Not on Windows: Chromium keeps the
+// removed session's files open until quit, so the delete would fail or half-finish; the tombstone
+// sweep at the next start deletes it instead (its storage is already cleared by then).
+export function deleteFolderOnRemoval(platform: NodeJS.Platform = process.platform): boolean {
+  return platform !== 'win32'
+}
+
 // Only an account list read from diwan.json itself is trusted at all. Recovery mode has no list,
 // a .bak may predate the newest accounts, and a missing file says nothing.
 export function orphanSweepAllowed(store: { recovery: boolean; source: LoadSource }): boolean {

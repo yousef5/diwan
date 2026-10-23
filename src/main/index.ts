@@ -18,10 +18,9 @@ import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
 import { createLogger } from './log'
 import { Notifier } from './notifier'
-import { sweepRemovedAccountFolders } from './orphan-partitions'
+import { deleteFolderOnRemoval, sweepRemovedAccountFolders } from './orphan-partitions'
 import { resolvePaths } from './paths'
 import { Registry } from './registry'
-import { rmRetryOptions } from './retry-fs'
 import { wireSessionEnd } from './session-end'
 import { accountForSession, setupGuestSession } from './sessions'
 import { matchShortcut, type ShortcutAction } from './shortcuts'
@@ -46,7 +45,6 @@ function start(): void {
   const store = new Store(paths.userData, 300, (e) => log.error('saving settings failed (will retry)', e))
   if (store.recovery) log.error('settings file is damaged; running in recovery mode')
   const hub = new StateHub(store, (e) => log.error('a state listener failed', e))
-  hub.dataDir = paths.userData
   const nexusPartitions = join(paths.nexusUserData, 'Partitions')
   const importedSources = () =>
     new Set(hub.accounts().flatMap((a) => (a.importedFrom ? [a.importedFrom] : [])))
@@ -215,9 +213,12 @@ function start(): void {
       await ses.clearStorageData().catch(() => {})
       await ses.clearCache().catch(() => {})
     }
-    await rm(dir, { recursive: true, force: true, ...rmRetryOptions() }).catch((e) =>
-      log.warn('could not delete the account folder', e),
-    )
+    // On Windows the folder goes at the next start (its tombstone stays; orphan-partitions.ts).
+    if (deleteFolderOnRemoval()) {
+      await rm(dir, { recursive: true, force: true }).catch((e) =>
+        log.warn('could not delete the account folder', e),
+      )
+    }
     log.info('account removed', { id })
   }
 
@@ -395,10 +396,15 @@ function start(): void {
       hub.notify()
       win = createWindow()
       // Logoff/shutdown: the close-to-tray handler must not cancel the close, and settings are saved now.
+      // A Windows logoff query can still be cancelled, so it only saves.
       wireSessionEnd({
         platform: process.platform,
         win,
         powerMonitor,
+        onQuery: () => {
+          persistGeometry()
+          flushQuietly()
+        },
         onEnd: () => {
           quitting = true
           persistGeometry()

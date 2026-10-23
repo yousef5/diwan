@@ -137,6 +137,10 @@ export async function sweepPartials(partitionsDir: string): Promise<void> {
 
 let running = false
 
+// Windows Defender scans a freshly copied folder and can hold it for seconds, so the rename into
+// place waits longer than the default retry (about 3.9 s in all). Windows only, like every retry.
+export const IMPORT_RENAME_DELAYS_MS: readonly number[] = [100, 250, 500, 1000, 2000]
+
 // Copies each session folder (reflink on btrfs, so instant) into acc-<id>.partial, renames it
 // into place, then registers the account. Nexus's files are only read; symlinks are never followed.
 export async function applyImport(
@@ -182,7 +186,7 @@ export async function applyImport(
           },
         })
         if (d.isNexusRunning?.()) throw new Error('Nexus started during the import; quit it and try again')
-        await retryAsync(() => move(partial, dest), d.retry)
+        await retryAsync(() => move(partial, dest), { delays: IMPORT_RENAME_DELAYS_MS, ...d.retry })
         try {
           d.setupSession(id)
           d.hub.addAccount(item.name, item.color, id, item.sourceId)

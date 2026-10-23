@@ -19,6 +19,7 @@ import {
   applyImport,
   dirSize,
   fsPlanDeps,
+  IMPORT_RENAME_DELAYS_MS,
   MAX_TEXT_BYTES,
   nexusRunning,
   readSmallText,
@@ -402,4 +403,8 @@ describe('fsPlanDeps.readText', () => {
     expect(fsPlanDeps.readText(join(d, 'edge.json'))?.length).toBe(MAX_TEXT_BYTES)
     expect(readSmallText(join(d, 'edge.json'), 10)).toBeNull()
   })
+})
+
+test('the import rename waits longer than the default retry: Defender holds fresh copies', () => {
+  expect(IMPORT_RENAME_DELAYS_MS).toEqual([100, 250, 500, 1000, 2000])
 })
