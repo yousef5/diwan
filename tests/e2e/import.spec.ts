@@ -43,13 +43,17 @@ function writeNexus(accounts: { id: string; name: string }[]): void {
 async function startNexus(): Promise<void> {
   const bin = join(profile.root, 'bin')
   mkdirSync(bin, { recursive: true })
-  // `sleep` run through a link named nexus: the kernel names the process after the link. argv[0]
-  // stays "sleep" for multi-call coreutils (uutils on Ubuntu 26.04, busybox), which pick the
-  // utility by argv[0] and would refuse to run as "nexus".
-  symlinkSync('/usr/bin/sleep', join(bin, 'nexus'))
-  fakeNexus = spawn(join(bin, 'nexus'), ['300'], { stdio: 'ignore', argv0: 'sleep' })
+  // A shell idling in a loop, run through a link named nexus: the kernel names the process after
+  // the link. (Not coreutils' sleep: Ubuntu 26.04's uutils is a multi-call binary that won't run as
+  // "nexus". Not node either: it renames its main thread.) The loop keeps the shell itself alive
+  // instead of letting it exec into sleep.
+  symlinkSync('/bin/sh', join(bin, 'nexus'))
+  fakeNexus = spawn(join(bin, 'nexus'), ['-c', 'while :; do sleep 1; done'], { stdio: 'ignore' })
   await new Promise((resolve, reject) => fakeNexus?.once('spawn', resolve).once('error', reject))
-  symlinkSync(`${hostname()}-${fakeNexus.pid}`, join(nexusData(), 'SingletonLock'))
+  const pid = fakeNexus.pid
+  const comm = readFileSync(`/proc/${pid}/comm`, 'utf8').trim()
+  if (comm !== 'nexus' || fakeNexus.exitCode !== null) throw new Error(`fake Nexus is not running (${comm})`)
+  symlinkSync(`${hostname()}-${pid}`, join(nexusData(), 'SingletonLock'))
 }
 
 async function quitNexus(): Promise<void> {
