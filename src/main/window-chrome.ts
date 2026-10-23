@@ -2,7 +2,7 @@ import type { Platform } from '../shared/types'
 
 // The window frame per platform. Linux: frameless (on Hyprland the compositor draws the frame;
 // floating desktops can turn on the shell's own window-controls bar). Windows: the native caption
-// buttons drawn over the shell's 48 px context bar (Window Controls Overlay), in its colours; the
+// buttons drawn over the shell's 48 px context bar (Window Controls Overlay) on a transparent band; the
 // shell keeps them clear with the env(titlebar-area-*) variables.
 export interface WindowChrome {
   frame?: false
@@ -16,8 +16,9 @@ export function windowChrome(platform: Platform): WindowChrome {
   if (platform === 'win32') {
     return {
       titleBarStyle: 'hidden',
-      // bg-1 (the context bar) and fg (styles.css).
-      titleBarOverlay: { color: '#131316', symbolColor: '#e4e4e7', height: CAPTION_HEIGHT },
+      // A transparent band, so whatever the shell draws under the buttons shows through (the context
+      // bar and its bottom border, or the bg-0 Settings and welcome screens); symbols in fg (styles.css).
+      titleBarOverlay: { color: '#00000000', symbolColor: '#e4e4e7', height: CAPTION_HEIGHT },
     }
   }
   return { frame: false }

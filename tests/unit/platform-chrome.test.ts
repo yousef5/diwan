@@ -12,7 +12,7 @@ describe('window chrome', () => {
     const c = windowChrome('win32')
     expect(c).toEqual({
       titleBarStyle: 'hidden',
-      titleBarOverlay: { color: '#131316', symbolColor: '#e4e4e7', height: 48 },
+      titleBarOverlay: { color: '#00000000', symbolColor: '#e4e4e7', height: 48 },
     })
     expect(c.frame).toBeUndefined()
   })

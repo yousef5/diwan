@@ -59,7 +59,6 @@
   unicode-bidi: plaintext;
 }
 
-/* Focus ring pushed outside a 4px box-shadow ring, so focus and "active" stay distinguishable. */
 /* Windows only: the width of the native caption buttons that titleBarOverlay draws over the
    top-right of the window. The env() fallbacks cancel out to 0 anywhere else, and the classes that
    use it are only set on win32 anyway (src/renderer/platform.ts). */
@@ -67,6 +66,7 @@
   --caption-w: calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw));
 }
 
+/* Focus ring pushed outside a 4px box-shadow ring, so focus and "active" stay distinguishable. */
 @utility focus-ring-wide {
   &:focus-visible {
     outline: 2px solid var(--color-focus);
