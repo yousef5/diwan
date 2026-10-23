@@ -8,7 +8,7 @@
     "name": "yousef5",
     "email": "yousef5@users.noreply.github.com"
   },
-  "license": "UNLICENSED",
+  "license": "MIT",
   "desktopName": "diwan.desktop",
   "main": "./out/main/index.js",
   "scripts": {

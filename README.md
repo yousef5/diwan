@@ -12,6 +12,7 @@ Each account stays logged in on its own, with its own notifications and unread c
 [![ci](https://github.com/yousef5/diwan/actions/workflows/ci.yml/badge.svg)](https://github.com/yousef5/diwan/actions/workflows/ci.yml)
 ![platform](https://img.shields.io/badge/platform-Linux-informational)
 ![electron](https://img.shields.io/badge/Electron-44-47848f)
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 
 </div>
 
@@ -150,6 +151,10 @@ The end-to-end suite drives the real app with Playwright. It is fully sealed: it
 **Stack:** Electron 44 · React 19 · TypeScript · Tailwind CSS 4 · zustand · zod · Vitest · Playwright · Biome · Bun.
 
 **Design documents:** [spec](docs/superpowers/specs/2026-10-22-diwan-1.0-design.md) · [implementation plan](docs/superpowers/plans/2026-10-22-diwan-1.0.md) · [UI design](docs/design/) · [why Electron and not Tauri](docs/spikes/webkitgtk-whatsapp.py)
+
+## License
+
+[MIT](LICENSE) © 2026 Mohammed Yousef
 
 ## Disclaimer
 

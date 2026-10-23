@@ -10,7 +10,7 @@ pkgrel=1
 pkgdesc='Multi-account WhatsApp Web desktop client'
 arch=('x86_64')
 url='https://github.com/yousef5/diwan'
-license=('LicenseRef-UNLICENSED')
+license=('MIT')
 depends=('alsa-lib' 'at-spi2-core' 'gtk3' 'libcups' 'libnotify' 'libxkbcommon' 'mesa' 'nss' 'xdg-utils')
 makedepends=('librsvg')
 options=('!strip' '!debug' '!lto')
@@ -46,4 +46,5 @@ package() {
   install -d "$pkgdir/usr/share/licenses/diwan"
   ln -s /opt/diwan/LICENSE.electron.txt "$pkgdir/usr/share/licenses/diwan/LICENSE.electron.txt"
   ln -s /opt/diwan/LICENSES.chromium.html "$pkgdir/usr/share/licenses/diwan/LICENSES.chromium.html"
+  install -Dm644 "$repo/LICENSE" "$pkgdir/usr/share/licenses/diwan/LICENSE"
 }
