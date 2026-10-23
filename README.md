@@ -213,12 +213,23 @@ chmod +x Diwan-<version>-x86_64.AppImage
 
 <br>
 
+**Quick install** (downloads the release and packages it for pacman, no build tools needed):
+
+```sh
+git clone https://github.com/yousef5/diwan && cd diwan/packaging/aur-bin
+makepkg -si
+```
+
+**Build from source:**
+
 ```sh
 git clone https://github.com/yousef5/diwan && cd diwan
 bun install && bunx install-electron --no
 bun run package:arch
 sudo pacman -U release/diwan-<version>-1-x86_64.pkg.tar.zst
 ```
+
+> An AUR package (`diwan-bin`) is ready and will be published as soon as AUR registration reopens.
 
 Diwan then appears in your app menu as **Diwan / ديوان**.
 

@@ -1,0 +1,44 @@
+# Maintainer: Mohammed Yousef <yousef311@hotmail.com>
+pkgname=diwan-bin
+_pkgname=diwan
+pkgver=1.1.0
+pkgrel=1
+pkgdesc='All your WhatsApp accounts in one calm desktop window (ديوان), prebuilt'
+arch=('x86_64')
+url='https://github.com/yousef5/diwan'
+license=('MIT')
+depends=('alsa-lib' 'at-spi2-core' 'gtk3' 'libcups' 'libnotify' 'libxkbcommon' 'mesa' 'nss' 'xdg-utils')
+provides=("$_pkgname")
+conflicts=("$_pkgname")
+options=('!strip' '!debug')
+source=("$pkgname-$pkgver.deb::$url/releases/download/v$pkgver/Diwan-$pkgver-amd64.deb"
+        "LICENSE::https://raw.githubusercontent.com/yousef5/diwan/v$pkgver/LICENSE"
+        "diwan.sh")
+sha256sums=('07903618b7430662df6dc1c4802d93372262346e71070f8b2fce8ae9b0ac8d2e'
+            'SKIP'
+            '9dafd2bbebfb2ab71536dc6387e9318d1beade7f422a466e4ac67488f92379cc')
+
+prepare() {
+  mkdir -p "$srcdir/deb"
+  bsdtar -xf "$srcdir/$pkgname-$pkgver.deb" -C "$srcdir/deb"
+  mkdir -p "$srcdir/root"
+  bsdtar -xf "$srcdir/deb/data.tar.xz" -C "$srcdir/root" 2>/dev/null \
+    || bsdtar -xf "$srcdir/deb/data.tar.zst" -C "$srcdir/root" 2>/dev/null \
+    || bsdtar -xf "$srcdir/deb/data.tar.gz" -C "$srcdir/root"
+}
+
+package() {
+  install -d "$pkgdir/opt"
+  cp -a "$srcdir/root/opt/Diwan" "$pkgdir/opt/diwan"
+  rm -f "$pkgdir/opt/diwan/resources/apparmor-profile"
+  chmod 4755 "$pkgdir/opt/diwan/chrome-sandbox"
+
+  install -Dm755 "$srcdir/diwan.sh" "$pkgdir/usr/bin/diwan"
+
+  install -Dm644 "$srcdir/root/usr/share/applications/diwan.desktop" \
+    "$pkgdir/usr/share/applications/diwan.desktop"
+  sed -i 's|^Exec=.*|Exec=diwan %U|' "$pkgdir/usr/share/applications/diwan.desktop"
+
+  cp -a "$srcdir/root/usr/share/icons" "$pkgdir/usr/share/icons"
+  install -Dm644 "$srcdir/LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}
