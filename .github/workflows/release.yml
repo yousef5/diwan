@@ -1,0 +1,70 @@
+# On a v* tag: build and smoke-test every package (package.yml), then attach them plus SHA256SUMS to a
+# DRAFT GitHub Release. Nothing is ever published automatically: Joe reviews the draft and publishes it.
+# Run by hand (workflow_dispatch) it only builds and checksums, as a dry run: no release is made.
+name: release
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check-version:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: The tag must match package.json's version
+        if: github.ref_type == 'tag'
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match package.json version $version"
+            exit 1
+          fi
+
+  package:
+    needs: check-version
+    uses: ./.github/workflows/package.yml
+
+  draft:
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum Diwan-* > SHA256SUMS
+          cat SHA256SUMS
+          ls -l
+      - name: Upload the dry-run result
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: diwan-release-dry-run
+          path: dist/
+          compression-level: 0
+      - name: Create the draft release
+        if: github.ref_type == 'tag'
+        working-directory: dist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG" --draft --verify-tag --title "Diwan ${TAG#v}" \
+            --notes "Draft built by CI from $TAG. Check the files, add the notes, then publish." \
+            Diwan-* SHA256SUMS
