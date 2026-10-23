@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { expect, test } from 'vitest'
 import { createLogger } from '../../src/main/log'
+import { isWindows } from './helpers/platform'
 
 test('writes lines and rotates at the size limit, keeping 3 old files', () => {
   const dir = mkdtempSync(join(tmpdir(), 'diwan-log-'))
@@ -12,6 +13,14 @@ test('writes lines and rotates at the size limit, keeping 3 old files', () => {
   for (let i = 0; i < 40; i++) log.warn(`line ${i} ${'x'.repeat(30)}`)
   expect(existsSync(join(dir, 'main.log.1'))).toBe(true)
   expect(existsSync(join(dir, 'main.log.3'))).toBe(true)
+  expect(existsSync(join(dir, 'main.log.4'))).toBe(false)
+})
+
+test('rotation works the same with the Windows retry path', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'diwan-log-'))
+  const log = createLogger(dir, { maxBytes: 200, echo: false, platform: 'win32' })
+  for (let i = 0; i < 40; i++) log.warn(`line ${i} ${'x'.repeat(30)}`)
+  expect(existsSync(join(dir, 'main.log.1'))).toBe(true)
   expect(existsSync(join(dir, 'main.log.4'))).toBe(false)
 })
 
@@ -87,7 +96,7 @@ test('does not throw when the dir is a regular file', () => {
   expect(() => log.info('x')).not.toThrow()
 })
 
-test('log file is private (0600)', () => {
+test.skipIf(isWindows)('log file is private (0600)', () => {
   const { dir, log } = setup()
   log.info('x')
   expect(statSync(join(dir, 'main.log')).mode & 0o777).toBe(0o600)

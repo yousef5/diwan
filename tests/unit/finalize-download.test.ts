@@ -21,6 +21,7 @@ import {
   sanitizeFilename,
   sweepStaleDownloadParts,
 } from '../../src/main/downloads'
+import { canSymlink } from './helpers/platform'
 
 const fs = { linkSync, unlinkSync, copyFileSync, exists: lstatExists }
 const eperm = () => Object.assign(new Error('perm'), { code: 'EPERM' })
@@ -76,7 +77,7 @@ test('link EPERM falls back to copy; file kept under final name, stage removed',
   expect(existsSync(stage)).toBe(false)
 })
 
-test('dangling symlink at wanted name is untouched; saved as (1)', () => {
+test.skipIf(!canSymlink())('dangling symlink at wanted name is untouched; saved as (1)', () => {
   const dir = mkdtempSync(join(tmpdir(), 'diwan-dl-'))
   const stage = join(dir, '.s.part')
   writeFileSync(stage, 'data')
@@ -117,7 +118,7 @@ test('always-EEXIST exhausts attempts, returns null, keeps stage', () => {
   expect(existsSync(stage)).toBe(true)
 })
 
-test('sweepStaleDownloadParts removes only old regular .diwan parts', () => {
+test.skipIf(!canSymlink())('sweepStaleDownloadParts removes only old regular .diwan parts', () => {
   const dir = mkdtempSync(join(tmpdir(), 'diwan-dl-'))
   const old = Date.now() / 1000 - 3 * 86_400
   for (const n of ['.diwan-a.part', '.diwan-a.part.crdownload', 'keep.txt', '.diwan-fresh.part']) {

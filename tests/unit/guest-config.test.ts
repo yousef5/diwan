@@ -13,11 +13,21 @@ describe('guest config', () => {
   test('partition name', () => expect(partitionOf('abc')).toBe('persist:acc-abc'))
 
   test('user agent is real Chrome, reduced form, no Electron', () => {
-    const ua = chromeUserAgent('138.0.7204.97')
+    const ua = chromeUserAgent('138.0.7204.97', 'linux')
     expect(ua).toBe(
       'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
     )
     expect(ua).not.toMatch(/Electron|Diwan/)
+  })
+
+  test('user agent matches the platform', () => {
+    expect(chromeUserAgent('138.0.7204.97', 'win32')).toBe(
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+    )
+    expect(chromeUserAgent('138.0.7204.97', 'darwin')).toBe(
+      'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/138.0.0.0 Safari/537.36',
+    )
+    expect(chromeUserAgent('138.0.7204.97', 'freebsd')).toMatch(/^Mozilla\/5\.0 \(X11; Linux x86_64\)/)
   })
 
   test('spell languages: English + Arabic when offered', () => {

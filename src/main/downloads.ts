@@ -32,14 +32,23 @@ function fitBase(base: string, ext: string, reserve: number): string {
   return out
 }
 
+// Windows device names, reserved with any extension ("con.txt" opens the console). Windows also
+// treats the superscript digits ¹²³ as COM/LPT port numbers.
+const RESERVED = /^(con|prn|aux|nul|conin\$|conout\$|com[1-9¹²³]|lpt[1-9¹²³])(\s*)(?=\.|$)/i
+
+// Safe on every OS: Windows-only rules apply everywhere, so a name never depends on where it lands.
 export function sanitizeFilename(name: string): string {
   const cleaned = name
-    .replace(/[/\\]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '_')
+    .replace(/[/\\<>:"|?*]|[\p{Cc}\p{Cf}\p{Zl}\p{Zp}]/gu, '_')
     .trim()
     .replace(/^[.\s]+|[.\s]+$/g, '')
+    .replace(RESERVED, '$1_$2')
   if (!cleaned || cleaned === '.' || cleaned === '..') return 'download'
   const { base, ext } = splitName(cleaned)
-  return `${fitBase(base, ext, SUFFIX_RESERVE)}${ext}` || 'download'
+  // Truncation can end the base on a dot or a space, which Windows would silently drop.
+  const fitted = fitBase(base, ext, SUFFIX_RESERVE)
+  const cut = fitted === base ? fitted : fitted.replace(/[.\s]+$/, '')
+  return `${cut}${ext}` || 'download'
 }
 
 export function uniquePath(dir: string, filename: string, exists: (p: string) => boolean): string {

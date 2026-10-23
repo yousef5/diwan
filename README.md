@@ -11,9 +11,10 @@ with its own notifications and unread count, one shortcut away.
 
 <p>
   <a href="https://github.com/yousef5/diwan/actions/workflows/ci.yml"><img src="https://img.shields.io/github/actions/workflow/status/yousef5/diwan/ci.yml?branch=main&style=for-the-badge&logo=githubactions&logoColor=white&label=CI" alt="CI"></a>
-  <a href="https://github.com/yousef5/diwan/releases"><img src="https://img.shields.io/badge/version-1.0.0-3b82f6?style=for-the-badge" alt="Version 1.0.0"></a>
-  <img src="https://img.shields.io/badge/Linux-ready-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux">
-  <img src="https://img.shields.io/badge/Windows-planned-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows planned">
+  <a href="https://github.com/yousef5/diwan/releases/latest"><img src="https://img.shields.io/badge/download-releases-3b82f6?style=for-the-badge&logo=github&logoColor=white" alt="Download"></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/version-1.1.0-3b82f6?style=for-the-badge" alt="Version 1.1.0"></a>
+  <img src="https://img.shields.io/badge/Linux-ready-FCC624?style=for-the-badge&logo=linux&logoColor=black" alt="Linux ready">
+  <img src="https://img.shields.io/badge/Windows-ready-0078D6?style=for-the-badge&logo=windows&logoColor=white" alt="Windows ready">
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-22c55e?style=for-the-badge" alt="MIT"></a>
 </p>
 
@@ -23,7 +24,7 @@ with its own notifications and unread count, one shortcut away.
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?style=flat-square&logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/Tailwind-4-06B6D4?style=flat-square&logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
   <img src="https://img.shields.io/badge/Bun-runtime-000000?style=flat-square&logo=bun&logoColor=white" alt="Bun">
-  <img src="https://img.shields.io/badge/tests-770%2B-22c55e?style=flat-square&logo=vitest&logoColor=white" alt="Tests">
+  <img src="https://img.shields.io/badge/tests-870%2B-22c55e?style=flat-square&logo=vitest&logoColor=white" alt="Tests">
 </p>
 
 **[✨ Features](#-features)** · **[📦 Install](#-install)** · **[🚀 Getting started](#-getting-started)** · **[⌨️ Shortcuts](#️-keyboard-shortcuts)** · **[❓ FAQ](#-faq)** · **[🛠️ Development](#️-development)**
@@ -110,9 +111,10 @@ WhatsApp Web lets one browser profile log in to **one** account. Run three numbe
 <td valign="top">
 
 ### 🧩 Desktop integration
-- Tray icon with badge, close to tray, start hidden
-- `whatsapp:` links open in Diwan
-- Downloads go straight to `~/Downloads`
+- **Linux and Windows**: tray icon with badge, close to tray, start hidden
+- Unread count on the **Windows taskbar** button, native caption buttons
+- `whatsapp:` links can open in Diwan (opt-in)
+- Downloads go straight to your Downloads folder
 - Native **Wayland**, with automatic X11 fallback
 
 </td>
@@ -120,25 +122,65 @@ WhatsApp Web lets one browser profile log in to **one** account. Run three numbe
 </table>
 
 > [!TIP]
-> **Coming from Nexus / MultiWhatsApp?** On first launch Diwan offers to import your accounts, still logged in, without touching Nexus's own data.
+> **Coming from Nexus / MultiWhatsApp on Linux?** On first launch Diwan offers to import your accounts, still logged in, without touching Nexus's own data. (The import is Linux-only.)
 
 <br>
 
 ## 📦 Install
 
+Ready-made packages for Windows and Linux are on the **[Releases page](https://github.com/yousef5/diwan/releases/latest)**, each with a `SHA256SUMS` file. Download the one for your system, then follow its section below. Replace `<version>` with the version you downloaded (for example `1.1.0`).
+
+| System | File |
+|---|---|
+| 🪟 Windows 10 / 11 (x64) | `Diwan-Setup-<version>.exe` |
+| 🐧 Debian 12+ · Ubuntu 22.04+ · Mint · Pop!_OS | `Diwan-<version>-amd64.deb` |
+| 🐧 Fedora | `Diwan-<version>-x86_64.rpm` |
+| 🐧 Any other Linux | `Diwan-<version>-x86_64.AppImage` |
+| 🐧 Arch · CachyOS · Manjaro · EndeavourOS | build the package from source (below) |
+
 <details open>
-<summary><b>🐧 Arch Linux · CachyOS · Manjaro · EndeavourOS</b></summary>
+<summary><b>🪟 Windows 10 / 11</b></summary>
+
+<br>
+
+1. Download **`Diwan-Setup-<version>.exe`** and run it. It installs for your user only (no admin rights needed), and you can pick the folder.
+2. Windows may show **"Windows protected your PC"**, because the installer isn't code-signed yet. Click **More info → Run anyway**. See the [FAQ](#-faq).
+3. Start **Diwan** from the Start menu.
+
+What you get on Windows: native caption buttons, the unread count on the taskbar button and the tray icon, and native notifications.
+
+**Optional:** to open `whatsapp:` links in Diwan, turn on *Settings → General → Open whatsapp: links in Diwan*. If WhatsApp Desktop still grabs them, choose Diwan in *Windows Settings → Apps → Default apps*.
+
+Uninstalling (*Settings → Apps*) keeps your accounts and settings in `%APPDATA%\Diwan`. Delete that folder too for a clean removal.
+
+> [!NOTE]
+> The Windows build is tested in CI. The import from Nexus / MultiWhatsApp is Linux-only.
+
+</details>
+
+<details open>
+<summary><b>🐧 Debian · Ubuntu · Mint · Pop!_OS (<code>.deb</code>)</b></summary>
 
 <br>
 
 ```sh
-git clone https://github.com/yousef5/diwan && cd diwan
-bun install && bunx install-electron --no
-bun run package:arch
-sudo pacman -U release/diwan-1.0.0-1-x86_64.pkg.tar.zst
+sudo apt install ./Diwan-<version>-amd64.deb
 ```
 
-Diwan then appears in your app menu as **Diwan / ديوان**.
+Works on Debian 12+ and Ubuntu 22.04+ (the dependencies accept both the classic and the newer `t64` library names). On Ubuntu 24.04+ the package also installs an AppArmor profile, so Chromium's sandbox stays on.
+
+</details>
+
+<details>
+<summary><b>🐧 Fedora (<code>.rpm</code>)</b></summary>
+
+<br>
+
+```sh
+sudo dnf install ./Diwan-<version>-x86_64.rpm
+```
+
+Built for Fedora. openSUSE may work but is untested.
 
 </details>
 
@@ -148,25 +190,47 @@ Diwan then appears in your app menu as **Diwan / ديوان**.
 <br>
 
 ```sh
-git clone https://github.com/yousef5/diwan && cd diwan
-bun install && bunx install-electron --no
-bun run package:appimage
-./release/Diwan-*.AppImage
+chmod +x Diwan-<version>-x86_64.AppImage
+./Diwan-<version>-x86_64.AppImage
 ```
 
 > [!NOTE]
-> The AppImage target exists but isn't tested outside Arch yet. Ready-made `.deb`, `.rpm`, Flatpak and AppImage downloads on the Releases page are on the [roadmap](#️-roadmap).
+> Ubuntu 24.04+ blocks unprivileged user namespaces through AppArmor, which Chromium's sandbox needs. There the AppImage's launcher notices and starts Diwan without the sandbox by itself. For full sandboxing on Ubuntu, use the `.deb` instead.
 
 </details>
 
 <details>
-<summary><b>🪟 Windows</b></summary>
+<summary><b>🐧 Arch Linux · CachyOS · Manjaro · EndeavourOS</b></summary>
 
 <br>
 
-Windows support is **planned**: an `.exe` installer with tray badge and native notifications. See the [roadmap](#️-roadmap).
+```sh
+git clone https://github.com/yousef5/diwan && cd diwan
+bun install && bunx install-electron --no
+bun run package:arch
+sudo pacman -U release/diwan-<version>-1-x86_64.pkg.tar.zst
+```
+
+Diwan then appears in your app menu as **Diwan / ديوان**.
 
 </details>
+
+<details>
+<summary><b>🛠️ Build the other packages from source</b></summary>
+
+<br>
+
+```sh
+git clone https://github.com/yousef5/diwan && cd diwan
+bun install && bunx install-electron --no
+bun run package:linux         # AppImage + .deb + .rpm in release/ (the .rpm needs rpmbuild)
+bun run package:linux:norpm   # AppImage + .deb only, e.g. on Arch
+bun run package:win           # Diwan-Setup-<version>.exe (run it on Windows)
+```
+
+</details>
+
+**Wayland:** the `.deb`, `.rpm` and AppImage run natively on Wayland when your session sets `XDG_SESSION_TYPE=wayland`, and on X11 otherwise. The Arch package's launcher goes further and uses Wayland whenever a Wayland socket exists.
 
 **Optional:** let `whatsapp:` links open in Diwan (Linux):
 
@@ -207,7 +271,14 @@ Shortcuts work even while you're typing inside WhatsApp.
 
 ## 🔒 Privacy & your data
 
-Diwan has **no backend, no analytics and no account system**. Everything lives on your computer, in `~/.config/Diwan`:
+Diwan has **no backend, no analytics and no account system**. Everything lives on your computer, in one folder:
+
+| System | Folder |
+|---|---|
+| 🐧 Linux | `~/.config/Diwan` |
+| 🪟 Windows | `%APPDATA%\Diwan` (kept when you uninstall) |
+
+Inside it:
 
 | Path | What it holds |
 |---|---|
@@ -240,6 +311,18 @@ Each live account is a full WhatsApp Web page, roughly 300–500 MB. Hidden acco
 </details>
 
 <details>
+<summary><b>Why does Windows warn me when I install it?</b></summary>
+<br>
+The installer isn't code-signed yet (a signing certificate costs money every year), so SmartScreen shows <b>"Windows protected your PC"</b> for a new, unsigned app. Click <b>More info → Run anyway</b>. If you want to check the file first, compare its hash with <code>SHA256SUMS</code> on the Releases page: <code>Get-FileHash .\Diwan-Setup-&lt;version&gt;.exe</code> in PowerShell.
+</details>
+
+<details>
+<summary><b>Does it work on macOS?</b></summary>
+<br>
+Not yet. Diwan is built and tested for Linux and Windows only.
+</details>
+
+<details>
 <summary><b>Can Diwan read my messages?</b></summary>
 <br>
 Diwan runs no servers and sends nothing anywhere. The only thing it reads from the page is what a desktop notification needs (sender, text, chat), and you can turn the text off.
@@ -266,6 +349,8 @@ Diwan runs no servers and sends nothing anywhere. The only thing it reads from t
 - The **main process** owns all state and pushes snapshots to the UI.
 - Each account is a `<webview>` in its own `persist:` session.
 - A tiny **sandboxed preload** inside each page reports notifications, online state and the profile photo. Everything it sends is rate-limited and schema-validated.
+- One codebase for **Linux and Windows**: platform differences (caption buttons, taskbar badge, `whatsapp:` registration, file locking, session end) sit behind small, tested seams.
+- **CI** runs the type check and unit tests on Ubuntu and Windows, lint and the end-to-end suite on Ubuntu, and builds and smoke-tests every package on each push.
 
 <br>
 
@@ -275,14 +360,16 @@ Diwan runs no servers and sends nothing anywhere. The only thing it reads from t
 bun install && bunx install-electron --no
 DIWAN_USER_DATA=$(mktemp -d) bun run dev   # live app on a throwaway profile
 bun run typecheck && bun run lint          # TypeScript + Biome
-bun run test                               # 770+ unit & component tests (Vitest)
+bun run test                               # 870+ unit & component tests (Vitest)
 bun run e2e                                # 15 end-to-end tests (Playwright)
 ```
 
 > [!IMPORTANT]
 > Always run the end-to-end suite through `bun run e2e`. It is fully sealed: headless under Xvfb, a private D-Bus, the network blocked, a stand-in page instead of WhatsApp, and throwaway folders only. It refuses to start against your real desktop or data.
 
-📚 **Design docs:** [spec](docs/superpowers/specs/2026-10-22-diwan-1.0-design.md) · [implementation plan](docs/superpowers/plans/2026-10-22-diwan-1.0.md) · [UI design](docs/design/) · [why Electron, not Tauri](docs/spikes/webkitgtk-whatsapp.py)
+**Releasing:** bump the version in `package.json` and `packaging/PKGBUILD` (they must match) and add a [CHANGELOG](CHANGELOG.md) entry, then push a `vX.Y.Z` tag. The `release` workflow checks the tag against `package.json`, builds the `.exe`, AppImage, `.deb` and `.rpm`, and attaches them with `SHA256SUMS` to a **draft** release. Nothing is published until a maintainer reviews the draft and publishes it.
+
+📚 **Design docs:** [spec](docs/superpowers/specs/2026-10-22-diwan-1.0-design.md) · [implementation plan](docs/superpowers/plans/2026-10-22-diwan-1.0.md) · [cross-platform plan](docs/superpowers/plans/2026-10-23-cross-platform.md) · [UI design](docs/design/) · [why Electron, not Tauri](docs/spikes/webkitgtk-whatsapp.py)
 
 <br>
 
@@ -292,9 +379,11 @@ bun run e2e                                # 15 end-to-end tests (Playwright)
 - [x] Native notifications, tray badge, Arabic support
 - [x] Import from Nexus / MultiWhatsApp
 - [x] Arch Linux package
-- [ ] Ready-made downloads on GitHub Releases (AppImage, `.deb`, `.rpm`)
+- [x] **Windows** installer (`.exe`), taskbar badge, native caption buttons
+- [x] AppImage, `.deb` and `.rpm` packages
+- [x] Ready-made downloads on GitHub Releases, built by CI
 - [ ] Flatpak
-- [ ] **Windows** installer
+- [ ] macOS
 - [ ] Sleep idle accounts to save memory
 
 <br>

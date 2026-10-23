@@ -1,5 +1,4 @@
-import type { ShellPayload } from '../shared/ipc'
-import { type BadgeKey, badgeKey } from '../shared/unread'
+import { type BadgeKey, badgeKey, type OverlayKey } from '../shared/unread'
 import { MARK_PATHS } from './icons'
 
 // The tray icon with an unread badge. Main picks which image to show from its own snapshot
@@ -16,15 +15,15 @@ export function badgeLabel(total: number): string | null {
   return key === 'none' ? null : key
 }
 
-type Images = ShellPayload<'tray:setBadges'>
-
-export interface TrayBadgeDeps {
+export interface TrayBadgeDeps<K extends BadgeKey = BadgeKey> {
   // Resolves once the badge font can be drawn.
   ready(): Promise<void>
   // A PNG data URL for the key, or null when it can't be drawn (no canvas).
-  paint(key: BadgeKey): string | null
+  paint(key: K): string | null
   // Hands images to main; false when main refused them.
-  send(images: Images): Promise<boolean>
+  send(images: Partial<Record<K, string>>): Promise<boolean>
+  // Which keys have an image at all (the taskbar overlay has none for 'none'). Default: every key.
+  drawn?(key: BadgeKey): key is K
 }
 
 // show(total) on every snapshot. Cheap when nothing changed: the same badge key as last time
@@ -32,21 +31,24 @@ export interface TrayBadgeDeps {
 // send forgets the key, and if the total still maps to it, forgets that it was last too: the next
 // snapshot tries once more (one try per snapshot, never a loop), so a badge that failed while the
 // total moved onto it isn't missing until the total changes again.
-export function createTrayBadges(d: TrayBadgeDeps): { show(total: number): Promise<void> } {
-  const sent = new Set<BadgeKey>()
+export function createTrayBadges<K extends BadgeKey = BadgeKey>(
+  d: TrayBadgeDeps<K>,
+): { show(total: number): Promise<void> } {
+  const sent = new Set<K>()
   let last: BadgeKey | null = null
+  const drawn = d.drawn ?? ((_k: BadgeKey): _k is K => true)
   return {
     async show(total) {
       const key = badgeKey(total)
       if (key === last) return
       last = key
-      if (sent.has(key)) return
+      if (!drawn(key) || sent.has(key)) return
       sent.add(key)
       let ok = false
       try {
         await d.ready()
         const url = d.paint(key)
-        ok = url !== null && (await d.send({ [key]: url }))
+        ok = url !== null && (await d.send({ [key]: url } as Partial<Record<K, string>>))
       } catch {
         ok = false
       }
@@ -71,6 +73,31 @@ function token(name: string, fallback: string): string {
 }
 
 const BADGE_FONT = (px: number) => `700 ${px}px Inter, sans-serif`
+
+// The Windows taskbar overlay (src/main/taskbar-badge.ts): the badge alone, a 16 px accent-strong
+// disc with the count, which Windows draws over the corner of the taskbar button. Nothing at 0.
+export const OVERLAY_SIZE = 16
+
+const isOverlayKey = (k: BadgeKey): k is OverlayKey => k !== 'none'
+
+export function paintOverlayBadge(key: OverlayKey): string | null {
+  const canvas = document.createElement('canvas')
+  canvas.width = OVERLAY_SIZE
+  canvas.height = OVERLAY_SIZE
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return null
+  const c = OVERLAY_SIZE / 2
+  ctx.fillStyle = token('--color-accent-strong', FALLBACK_ACCENT_STRONG)
+  ctx.beginPath()
+  ctx.arc(c, c, c, 0, Math.PI * 2)
+  ctx.fill()
+  ctx.fillStyle = BADGE_TEXT
+  ctx.font = BADGE_FONT(key.length > 1 ? 8 : 11)
+  ctx.textAlign = 'center'
+  ctx.textBaseline = 'middle'
+  ctx.fillText(key, c, c + 0.5)
+  return canvas.toDataURL('image/png')
+}
 
 export function paintTrayBadge(key: BadgeKey): string | null {
   const canvas = document.createElement('canvas')
@@ -145,4 +172,21 @@ export function trayBadges(): { show(total: number): Promise<void> } {
       ),
   })
   return shared
+}
+
+let overlay: { show(total: number): Promise<void> } | null = null
+
+// The taskbar overlay's cache (Windows only; App calls it there). Same rules as the tray's.
+export function overlayBadges(): { show(total: number): Promise<void> } {
+  overlay ??= createTrayBadges<OverlayKey>({
+    ready: fontReady,
+    paint: paintOverlayBadge,
+    drawn: isOverlayKey,
+    send: (images) =>
+      window.diwan.invoke('taskbar:setBadges', images).then(
+        () => true,
+        () => false,
+      ),
+  })
+  return overlay
 }

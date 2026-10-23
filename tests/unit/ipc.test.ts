@@ -27,6 +27,20 @@ describe('shell channels', () => {
     expect(b({ none: 'data:image/png;base64,AAAA' })).toBe(false)
     expect(shellChannels['tray:setBadges'].safeParse({ none: 'https://x/y.png' }).success).toBe(false)
   })
+  test('taskbar:setBadges takes 16 px PNGs for 1–9 and 9+ only', () => {
+    const b = (v: unknown) => shellChannels['taskbar:setBadges'].safeParse(v).success
+    expect(b({ 3: OK_PNG, '9+': url('png', pngHeader(16, 16)) })).toBe(true)
+    expect(b({ none: OK_PNG })).toBe(false)
+    expect(b({ 10: OK_PNG })).toBe(false)
+    expect(b({ 1: url('png', pngHeader(17, 16)) })).toBe(false)
+    expect(b({ 1: url('jpeg', jpegHeader(16, 16)) })).toBe(false)
+  })
+  test('protocol:setWhatsapp takes a boolean only', () => {
+    const p = (v: unknown) => shellChannels['protocol:setWhatsapp'].safeParse(v).success
+    expect(p({ enabled: true })).toBe(true)
+    expect(p({ enabled: 'yes' })).toBe(false)
+    expect(p(undefined)).toBe(false)
+  })
   test('account:update patch is strict and non-empty', () => {
     const p = (patch: unknown) => shellChannels['account:update'].safeParse({ id: ID, patch }).success
     expect(p({})).toBe(false)

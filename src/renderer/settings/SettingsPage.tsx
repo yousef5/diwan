@@ -1,10 +1,12 @@
 import { type KeyboardEvent, type ReactNode, useEffect, useId, useRef, useState } from 'react'
+import { XDG_MIME_COMMAND } from '../../shared/protocol'
 import type { Account, SettingsPatch, Snapshot } from '../../shared/types'
 import { call } from '../api'
 import { START_FRESH } from '../components/RecoveryBanner'
 import { activeTile, focusFirst, mainRegion, trapTab } from '../focus'
 import { initials } from '../format'
 import { Icon } from '../icons'
+import { hasCaptionButtons, nexusImportSupported, windowControlsShown } from '../platform'
 import { type SettingsSection, useUi } from '../state'
 import { Button } from '../ui/Button'
 import { Kbd } from '../ui/Kbd'
@@ -81,8 +83,10 @@ function SettingsPanel() {
   const section = useUi((s) => s.section)
   const covered = useUi((s) => s.dialog !== null || s.menu !== null)
   // The window-controls bar (32 px, App) stays above the page, so the window can still be moved,
-  // minimised and closed with Settings open.
-  const controls = snap.settings.showWindowControls
+  // minimised and closed with Settings open. On Windows the native caption buttons sit over the
+  // page's top-right corner instead, so the close button keeps clear of them.
+  const controls = windowControlsShown(snap)
+  const captions = hasCaptionButtons(snap)
   const openSettings = useUi((s) => s.openSettings)
   const closeSettings = useUi((s) => s.closeSettings)
   useEscape(closeSettings, !covered)
@@ -179,7 +183,7 @@ function SettingsPanel() {
           aria-label="Close settings"
           aria-keyshortcuts="Escape"
           onClick={closeSettings}
-          className="absolute top-[18px] right-5 flex h-8 items-center gap-2 rounded-lg border border-line-strong px-2.5 text-[12px] font-medium text-fg-dim hover:bg-bg-3 hover:text-fg"
+          className={`absolute top-[18px] ${captions ? 'right-[calc(1.25rem+var(--caption-w))]' : 'right-5'} flex h-8 items-center gap-2 rounded-lg border border-line-strong px-2.5 text-[12px] font-medium text-fg-dim hover:bg-bg-3 hover:text-fg`}
         >
           Close <Kbd>Esc</Kbd>
         </button>
@@ -217,7 +221,7 @@ function Header({ title, body, recovery }: { title: string; body?: ReactNode; re
 }
 
 function General({ snap }: { snap: Snapshot }) {
-  const { settings, trayAvailable, recovery } = snap
+  const { settings, trayAvailable, recovery, platform } = snap
   const noTray = 'There is no system tray on this desktop, so Diwan can’t hide there.'
   return (
     <>
@@ -239,15 +243,59 @@ function General({ snap }: { snap: Snapshot }) {
           disabled={recovery || !trayAvailable}
           onChange={(v) => save({ startHidden: v })}
         />
+        {/* Windows always has its native caption buttons. */}
+        {platform !== 'win32' && (
+          <ToggleRow
+            title="Show window controls"
+            hint="Adds minimize, maximize and close buttons. Tiling desktops like Hyprland don’t need them."
+            checked={settings.showWindowControls}
+            disabled={recovery}
+            onChange={(v) => save({ showWindowControls: v })}
+          />
+        )}
+      </Group>
+      <WhatsappLinks snap={snap} />
+    </>
+  )
+}
+
+// Opt-in only: Diwan never makes itself the whatsapp: handler on its own. On Windows the switch
+// shows what the registry says (main reads it into the snapshot); on Linux the user runs xdg-mime.
+// It doesn't touch the settings file, so it works in recovery mode too.
+function WhatsappLinks({ snap }: { snap: Snapshot }) {
+  const hint = 'Chat links in your browser and other apps (whatsapp://send?phone=…) open here.'
+  if (snap.platform === 'win32')
+    return (
+      <Group label="Links">
         <ToggleRow
-          title="Show window controls"
-          hint="Adds minimize, maximize and close buttons. Tiling desktops like Hyprland don’t need them."
-          checked={settings.showWindowControls}
-          disabled={recovery}
-          onChange={(v) => save({ showWindowControls: v })}
+          title="Open whatsapp: links in Diwan"
+          // The switch reads Diwan's own registration; a default picked in Windows Settings (e.g.
+          // WhatsApp Desktop's, a UserChoice) still wins over it and Electron can't see that.
+          hint={`${hint} If WhatsApp Desktop still opens links, choose Diwan in Windows Settings → Default apps.`}
+          checked={snap.whatsappHandler === true}
+          onChange={(v) => void call('protocol:setWhatsapp', { enabled: v })}
         />
       </Group>
-    </>
+    )
+  if (snap.platform !== 'linux') return null
+  return (
+    <Group label="Links">
+      <Row
+        title="Open whatsapp: links in Diwan"
+        hint={
+          <>
+            {hint} To turn it on, run this in a terminal:{' '}
+            <code
+              dir="ltr"
+              className="mt-1.5 block rounded-md bg-bg-3 px-2 py-1.5 font-mono text-[12px] break-all text-fg select-all"
+            >
+              {XDG_MIME_COMMAND}
+            </code>
+          </>
+        }
+        control={() => null}
+      />
+    </Group>
   )
 }
 
@@ -285,7 +333,11 @@ function Notifications({ snap }: { snap: Snapshot }) {
         />
         <ToggleRow
           title="Mark the window as urgent"
-          hint="Highlights Diwan’s workspace in the bar when a message arrives."
+          hint={
+            snap.platform === 'win32'
+              ? 'Flashes Diwan’s taskbar button when a message arrives.'
+              : 'Highlights Diwan’s workspace in the bar when a message arrives.'
+          }
           checked={n.markUrgent}
           disabled={recovery}
           onChange={(v) => save({ notifications: { markUrgent: v } })}
@@ -409,7 +461,18 @@ function Data({ snap }: { snap: Snapshot }) {
   const openDialog = useUi((s) => s.openDialog)
   return (
     <>
-      <Header title="Data" body="Everything stays on this computer, in ~/.config/Diwan." />
+      <Header
+        title="Data"
+        body={
+          <>
+            Everything stays on this computer, in{' '}
+            <span dir="ltr" className="font-mono text-[12px] break-all text-fg select-text">
+              {snap.dataDir}
+            </span>
+            .
+          </>
+        }
+      />
       <Group label="Data">
         {recovery && (
           <Row
@@ -422,29 +485,31 @@ function Data({ snap }: { snap: Snapshot }) {
             )}
           />
         )}
-        <Row
-          title="Import from Nexus"
-          hint={
-            recovery
-              ? 'Not while the settings file is damaged.'
-              : importAvailable
-                ? 'Moves your Nexus accounts across, already signed in.'
-                : snap.accounts.some((a) => a.importedFrom !== undefined)
-                  ? 'Opens the import to check what Nexus has now.'
-                  : 'Nexus wasn’t found on this computer, or it has no signed-in accounts.'
-          }
-          control={(hintId) => (
-            <Button
-              variant="ghost"
-              aria-label="Import from Nexus"
-              aria-describedby={hintId}
-              disabled={recovery}
-              onClick={() => openDialog({ kind: 'import' })}
-            >
-              <Icon name="download" size={14} /> Import…
-            </Button>
-          )}
-        />
+        {nexusImportSupported(snap) && (
+          <Row
+            title="Import from Nexus"
+            hint={
+              recovery
+                ? 'Not while the settings file is damaged.'
+                : importAvailable
+                  ? 'Moves your Nexus accounts across, already signed in.'
+                  : snap.accounts.some((a) => a.importedFrom !== undefined)
+                    ? 'Opens the import to check what Nexus has now.'
+                    : 'Nexus wasn’t found on this computer, or it has no signed-in accounts.'
+            }
+            control={(hintId) => (
+              <Button
+                variant="ghost"
+                aria-label="Import from Nexus"
+                aria-describedby={hintId}
+                disabled={recovery}
+                onClick={() => openDialog({ kind: 'import' })}
+              >
+                <Icon name="download" size={14} /> Import…
+              </Button>
+            )}
+          />
+        )}
         <Row
           title="Data folder"
           hint="Settings, logs and each account’s WhatsApp session."
@@ -511,7 +576,7 @@ function About() {
       <Group label="About">
         <Row
           title="Diwan"
-          hint="Multi-account WhatsApp Web for Linux. No telemetry: the only network traffic is WhatsApp’s."
+          hint="Multi-account WhatsApp Web for your desktop. No telemetry: the only network traffic is WhatsApp’s."
           control={() => (
             <span dir="ltr" className="font-mono text-[12px] text-fg-dim">
               Version {__APP_VERSION__}

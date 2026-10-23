@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, test, vi } from 'vitest'
 import {
+  deleteFolderOnRemoval,
   orphanSweepAllowed,
   planFolderRemovals,
   sweepRemovedAccountFolders,
@@ -34,6 +35,14 @@ describe('planFolderRemovals', () => {
   test('an entry that is not an exact lowercase uuid is never turned into a path', () => {
     const bad = ['', '..', `${GONE}/..`, `../${GONE}`, GONE.toUpperCase(), `${GONE}.partial`, `${GONE}\n`]
     expect(planFolderRemovals(bad, [])).toEqual({ remove: [], settle: bad })
+  })
+})
+
+describe('deleteFolderOnRemoval', () => {
+  test('Linux deletes the folder at once; Windows leaves it to the next start (files still open)', () => {
+    expect(deleteFolderOnRemoval('linux')).toBe(true)
+    expect(deleteFolderOnRemoval('darwin')).toBe(true)
+    expect(deleteFolderOnRemoval('win32')).toBe(false)
   })
 })
 
@@ -88,6 +97,21 @@ describe('sweepRemovedAccountFolders', () => {
     expect(p.launch().pendingFolderRemovals()).toEqual([])
   })
 
+  test('Windows: the folder left in place at removal goes at the next start, with retrying rm', async () => {
+    const p = profile({ main: file([account(A, 'A', 0), account(B, 'B', 1)]), folders: [A, B] })
+    p.launch().removeAccount(B) // run 1 on win32: the folder is not touched
+    expect(p.has(B)).toBe(true)
+    const hub = p.launch() // run 2
+    expect(hub.pendingFolderRemovals()).toEqual([B])
+    const rm = vi.fn(async (path: string, opts: object) => rmSync(path, opts))
+    await expect(sweepRemovedAccountFolders(p.parts, hub, { rm, platform: 'win32' })).resolves.toEqual([
+      `acc-${B}`,
+    ])
+    expect(rm).toHaveBeenCalledWith(join(p.parts, `acc-${B}`), expect.objectContaining({ maxRetries: 5 }))
+    expect(p.has(B)).toBe(false)
+    expect(p.launch().pendingFolderRemovals()).toEqual([])
+  })
+
   test('a tombstoned id that was re-added as an account is not deleted, and its tombstone is cleared', async () => {
     const p = profile({ main: file([account(A, 'A', 0)], [A]), folders: [A] })
     const hub = p.launch()
@@ -106,7 +130,7 @@ describe('sweepRemovedAccountFolders', () => {
     const p = profile({ main: file([], [GONE, B]), folders: [] })
     const elsewhere = tmp()
     writeFileSync(join(elsewhere, 'precious'), 'x')
-    symlinkSync(elsewhere, join(p.parts, `acc-${GONE}`))
+    symlinkSync(elsewhere, join(p.parts, `acc-${GONE}`), 'junction') // junction: no privilege needed on Windows
     writeFileSync(join(p.parts, `acc-${B}`), 'not a folder')
     await expect(sweepRemovedAccountFolders(p.parts, p.launch())).resolves.toEqual([])
     expect(existsSync(join(elsewhere, 'precious'))).toBe(true)
@@ -123,6 +147,22 @@ describe('sweepRemovedAccountFolders', () => {
     await expect(sweepRemovedAccountFolders(p.parts, p.launch(), { rm })).resolves.toEqual([`acc-${B}`])
     expect(p.has(GONE)).toBe(true)
     expect(p.launch().pendingFolderRemovals()).toEqual([GONE])
+  })
+
+  test('win32 deletes retry through file locks; linux passes no retry options', async () => {
+    for (const [platform, extra] of [
+      ['win32', { maxRetries: 5, retryDelay: 200 }],
+      ['linux', {}],
+    ] as const) {
+      const p = profile({ main: file([], [GONE]), folders: [GONE] })
+      const rm = vi.fn(async (path: string) => rmSync(path, { recursive: true, force: true }))
+      await sweepRemovedAccountFolders(p.parts, p.launch(), { rm, platform })
+      expect(rm).toHaveBeenCalledWith(join(p.parts, `acc-${GONE}`), {
+        recursive: true,
+        force: true,
+        ...extra,
+      })
+    }
   })
 
   test('runs nothing in recovery mode', async () => {

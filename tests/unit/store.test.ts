@@ -13,6 +13,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import { Store } from '../../src/main/store/store'
+import { canDenyAccess, isWindows } from './helpers/platform'
 
 const id = '649d14d5-ebb9-4ed6-9725-633b89c6ceac'
 const account = {
@@ -172,8 +173,7 @@ describe('Store', () => {
     expect(read('diwan.json.bak').accounts).toHaveLength(1)
   })
 
-  test('read-only directory: update throws, data stays in memory, retry works', () => {
-    if (process.getuid?.() === 0) return
+  test.skipIf(!canDenyAccess)('read-only directory: update throws, data stays in memory, retry works', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)
@@ -208,6 +208,95 @@ describe('Store', () => {
     fail.on = false
     s.flush()
     expect(read('diwan.json').importedFromNexus).toBe(true)
+  })
+
+  describe('directory fsync', () => {
+    const errno = (code: string) => Object.assign(new Error(code), { code })
+    // Two saves: the second must rotate the first into .bak, which only happens once main is known good.
+    const twoSaves = (s: Store) => {
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      s.flush()
+      s.update((f) => {
+        f.importedFromNexus = false
+      })
+      s.flush()
+    }
+
+    test('win32: the directory is never opened, saves succeed and .bak rotates', () => {
+      const errors: unknown[] = []
+      const opened: string[] = []
+      const s = new Store(
+        dir,
+        10_000,
+        (e) => errors.push(e),
+        {
+          openSync: ((p: string) => {
+            opened.push(p)
+            throw errno('EPERM')
+          }) as never,
+        },
+        'win32',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(opened).toEqual([])
+      expect(errors).toEqual([])
+      expect(read('diwan.json').importedFromNexus).toBe(false)
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test.each(['EPERM', 'EISDIR', 'EINVAL', 'EBADF'])('%s from the directory fsync is ignored', (code) => {
+      const errors: unknown[] = []
+      const s = new Store(
+        dir,
+        10_000,
+        (e) => errors.push(e),
+        {
+          fsyncSync: (() => {
+            throw errno(code)
+          }) as never,
+        },
+        'linux',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(errors).toEqual([])
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test('EPERM opening the directory is ignored', () => {
+      const s = new Store(
+        dir,
+        10_000,
+        undefined,
+        {
+          openSync: (() => {
+            throw errno('EPERM')
+          }) as never,
+        },
+        'linux',
+      )
+      expect(() => twoSaves(s)).not.toThrow()
+      expect(read('diwan.json.bak').importedFromNexus).toBe(true)
+    })
+
+    test('a real I/O error from the directory fsync still fails the save', () => {
+      const s = new Store(
+        dir,
+        10_000,
+        undefined,
+        {
+          fsyncSync: (() => {
+            throw errno('EIO')
+          }) as never,
+        },
+        'linux',
+      )
+      s.update((f) => {
+        f.importedFromNexus = true
+      })
+      expect(() => s.flush()).toThrow('EIO')
+    })
   })
 
   describe('timers', () => {
@@ -329,7 +418,7 @@ describe('Store', () => {
     expect(s.get().accounts[0].name).toBe('Work')
   })
 
-  test('the saved file is mode 0600', () => {
+  test.skipIf(isWindows)('the saved file is mode 0600', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)
@@ -402,8 +491,7 @@ describe('Store', () => {
     }
   })
 
-  test('an unreadable main + good .bak → recovery, nothing renamed', () => {
-    if (process.getuid?.() === 0) return
+  test.skipIf(!canDenyAccess)('an unreadable main + good .bak → recovery, nothing renamed', () => {
     const s = new Store(dir, 0)
     s.update((f) => {
       f.accounts.push(account)

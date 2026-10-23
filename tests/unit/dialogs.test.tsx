@@ -34,6 +34,9 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     recovery: false,
     importAvailable: true,
     trayAvailable: true,
+    platform: 'linux',
+    whatsappHandler: null,
+    dataDir: '/home/u/.config/Diwan',
     ...over,
   }
 }
@@ -369,7 +372,8 @@ describe('ImportDialog', () => {
     const dialog = await screen.findByRole('dialog', { name: 'Import finished' })
     expect(dialog.textContent).toContain('Imported 2 accounts. They open already signed in.')
     expect(within(dialog).getByText('محمد يوسف').getAttribute('dir')).toBe('auto')
-    expect(dialog.textContent).toContain('sudo pacman -R multiwhatsapp')
+    expect(dialog.textContent).toContain('You can now uninstall Nexus with your package manager.')
+    expect(dialog.textContent).not.toContain('pacman')
     expect(screen.queryByRole('alert')).toBeNull()
     await user.click(screen.getByRole('button', { name: 'Done' }))
     expect(screen.queryByRole('dialog')).toBeNull()

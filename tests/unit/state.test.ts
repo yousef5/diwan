@@ -11,6 +11,19 @@ const hub = () => new StateHub(new Store(mkdtempSync(join(tmpdir(), 'diwan-hub-'
 const nextSnapshot = (h: StateHub) => new Promise<Snapshot>((r) => h.once('changed', r))
 
 describe('StateHub', () => {
+  test('snapshot carries the platform and the data folder', () => {
+    const root = mkdtempSync(join(tmpdir(), 'diwan-hub-'))
+    const h = new StateHub(new Store(root, 0), undefined, 0)
+    const s = h.snapshot()
+    expect(s.platform).toBe(
+      process.platform === 'win32' || process.platform === 'darwin' ? process.platform : 'linux',
+    )
+    expect(s.dataDir).toBe(root)
+    h.dataDir = '/elsewhere'
+    h.platform = 'win32'
+    expect(h.snapshot()).toMatchObject({ dataDir: '/elsewhere', platform: 'win32' })
+  })
+
   test('first account becomes active; snapshot has default runtime', () => {
     const h = hub()
     const a = h.addAccount('Personal', '#3b82f6')

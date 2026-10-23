@@ -7,9 +7,10 @@ import { Rail } from './components/Rail'
 import { RecoveryBanner } from './components/RecoveryBanner'
 import { Stage } from './components/Stage'
 import { WindowControls } from './components/WindowControls'
+import { importOffered } from './platform'
 import { SettingsPage } from './settings/SettingsPage'
 import { useUi } from './state'
-import { trayBadges } from './trayBadges'
+import { overlayBadges, trayBadges } from './trayBadges'
 import { Toasts } from './ui/Toasts'
 
 // The first snapshot. Pushes are subscribed to before asking, so none is lost in between; and a
@@ -46,7 +47,8 @@ export function useAppCommands(): void {
   )
 }
 
-// The tray badge follows the unmuted unread total, through every snapshot (no re-render here).
+// The tray badge (and on Windows the taskbar overlay) follows the unmuted unread total, through
+// every snapshot (no re-render here).
 function useTrayBadges(): void {
   useEffect(() => {
     let lastSnap: unknown = null
@@ -54,14 +56,16 @@ function useTrayBadges(): void {
       const snap = useUi.getState().snap
       if (!snap || snap === lastSnap) return
       lastSnap = snap
-      if (snap.trayAvailable) void trayBadges().show(unreadTotal(snap.accounts, snap.runtime))
+      const total = unreadTotal(snap.accounts, snap.runtime)
+      if (snap.trayAvailable) void trayBadges().show(total)
+      if (snap.platform === 'win32') void overlayBadges().show(total)
     }
     sync()
     return useUi.subscribe(sync)
   }, [])
 }
 
-// Offer the Nexus import once per launch, on a run that has no accounts yet (the first one).
+// Offer the Nexus import once per launch, on a run that has no accounts yet (the first one). Linux only.
 function useImportOffer(): void {
   useEffect(() => {
     let offered = false
@@ -69,7 +73,7 @@ function useImportOffer(): void {
       const s = useUi.getState()
       if (offered || !s.snap) return
       offered = true
-      if (s.snap.importAvailable && s.snap.accounts.length === 0 && !s.dialog && !s.snap.recovery) {
+      if (importOffered(s.snap) && s.snap.accounts.length === 0 && !s.dialog && !s.snap.recovery) {
         s.openDialog({ kind: 'import' })
       }
     }

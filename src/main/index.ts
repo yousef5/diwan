@@ -1,6 +1,17 @@
 import { lstat, rm } from 'node:fs/promises'
-import { join } from 'node:path'
-import { app, BrowserWindow, dialog, Menu, screen, session } from 'electron'
+import { join, resolve } from 'node:path'
+import {
+  app,
+  BrowserWindow,
+  dialog,
+  Menu,
+  type NativeImage,
+  Notification,
+  nativeImage,
+  powerMonitor,
+  screen,
+  session,
+} from 'electron'
 import appIcon from '../../resources/icon.png?asset'
 import trayIcon from '../../resources/tray.png?asset'
 import { SHELL_COMMAND, STATE_CHANGED } from '../shared/ipc'
@@ -11,24 +22,33 @@ import { sweepStaleDownloadParts } from './downloads'
 import { applyGuestPreferences, isAllowedGuest, partitionOf } from './guest-config'
 import { resetCrashes, wireGuest } from './guests'
 import { applyImport, fsPlanDeps, nexusRunning, sweepPartials } from './importer/apply'
+import { importSupported, linuxOnly } from './importer/gate'
 import { hasImportable, planForApply, planImport } from './importer/plan'
 import { forgetAvatar, registerGuestIpc } from './ipc-guest'
 import { registerShellIpc } from './ipc-shell'
 import { classifyLink } from './link-policy'
 import { createLogger } from './log'
 import { Notifier } from './notifier'
-import { sweepRemovedAccountFolders } from './orphan-partitions'
+import { deleteFolderOnRemoval, sweepRemovedAccountFolders } from './orphan-partitions'
 import { resolvePaths } from './paths'
+import { linkFromArgv, whatsappHandler } from './protocol'
 import { Registry } from './registry'
+import { wireSessionEnd } from './session-end'
 import { accountForSession, setupGuestSession } from './sessions'
 import { matchShortcut, type ShortcutAction } from './shortcuts'
 import { StateHub } from './state'
 import { Store } from './store/store'
+import { TaskbarBadge } from './taskbar-badge'
 import { TrayController } from './tray'
+import { createTrayNotice } from './tray-notice'
 import { visibleBounds } from './window-bounds'
+import { windowChrome } from './window-chrome'
+import { bringToFront } from './window-front'
 
 // Tests and side-by-side runs use a throwaway profile.
 if (process.env.DIWAN_USER_DATA) app.setPath('userData', process.env.DIWAN_USER_DATA)
+// Windows groups taskbar buttons and attributes notifications by this id; it must match the installer's appId.
+if (process.platform === 'win32') app.setAppUserModelId('com.yousef5.diwan')
 
 if (!app.requestSingleInstanceLock()) app.quit()
 else start()
@@ -46,6 +66,7 @@ function start(): void {
   // Offered only when Nexus has an account that can actually be imported (installed is not enough:
   // it may have no signed-in accounts, or only ones already in Diwan).
   hub.importAvailable =
+    importSupported(hub.platform) &&
     !store.get().importedFromNexus &&
     hasImportable({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources())
   hub.notify()
@@ -78,10 +99,7 @@ function start(): void {
     win?.webContents.send(SHELL_COMMAND, cmd)
   }
   const showWindow = () => {
-    if (!win) return
-    if (win.isMinimized()) win.restore()
-    win.show()
-    win.focus()
+    if (win) bringToFront(win, hub.platform, () => app.focus())
   }
   const reveal = (id: string) => {
     hub.setActive(id)
@@ -104,7 +122,39 @@ function start(): void {
     isWindowFocused: () => !!win && win.isFocused() && win.isVisible() && !win.isMinimized(),
     flash: () => win?.flashFrame(true),
   })
-  const tray = new TrayController({ hub, icon: trayIcon, log, show: showWindow, reveal, quit })
+  const tray = new TrayController({
+    hub,
+    icon: trayIcon,
+    platform: hub.platform,
+    log,
+    show: showWindow,
+    reveal,
+    quit,
+  })
+  const taskbar = new TaskbarBadge<NativeImage>({
+    platform: hub.platform,
+    win: () => win,
+    decode: (url) => nativeImage.createFromDataURL(url),
+    setBadgeCount: (n) => app.setBadgeCount(n),
+    warn: (m, e) => log.warn(m, e),
+  })
+  const trayNotice = createTrayNotice({
+    shown: () => hub.trayNoticeShown(),
+    markShown: () => hub.markTrayNoticeShown(),
+    notify: (title, body) => {
+      if (!Notification.isSupported()) return false
+      new Notification({ title, body }).show()
+      return true
+    },
+    warn: (m, e) => log.warn(m, e),
+  })
+  const protocol = whatsappHandler({
+    platform: hub.platform,
+    app,
+    execPath: process.execPath,
+    defaultApp: !!process.defaultApp,
+    appPath: process.argv[1] ? resolve(process.argv[1]) : undefined,
+  })
   // Last resort: a stray error is logged instead of Electron's modal "JavaScript error" dialog.
   process.on('uncaughtException', (e) => log.error('uncaught exception', e))
   process.on('unhandledRejection', (e) => log.error('unhandled rejection', e))
@@ -162,7 +212,8 @@ function start(): void {
     }
   }
 
-  // whatsapp:// links (from the .desktop scheme handler) open the chat in the visible account.
+  // whatsapp:// links (the .desktop scheme handler, or the Windows handler once turned on in
+  // Settings) open the chat in the visible account.
   function openChat(url: string, attempt = 0): void {
     const id = hub.active()
     const guest = id ? registry.guestOf(id) : undefined
@@ -174,7 +225,7 @@ function start(): void {
   }
 
   function handleArgv(argv: string[]): void {
-    const link = argv.find((a) => a.startsWith('whatsapp:'))
+    const link = linkFromArgv(argv, hub.platform)
     if (!link) return
     const action = classifyLink(link)
     if (action.kind === 'chat') openChat(action.url)
@@ -207,9 +258,12 @@ function start(): void {
       await ses.clearStorageData().catch(() => {})
       await ses.clearCache().catch(() => {})
     }
-    await rm(dir, { recursive: true, force: true }).catch((e) =>
-      log.warn('could not delete the account folder', e),
-    )
+    // On Windows the folder goes at the next start (its tombstone stays; orphan-partitions.ts).
+    if (deleteFolderOnRemoval()) {
+      await rm(dir, { recursive: true, force: true }).catch((e) =>
+        log.warn('could not delete the account folder', e),
+      )
+    }
     log.info('account removed', { id })
   }
 
@@ -225,7 +279,7 @@ function start(): void {
       minWidth: 760,
       minHeight: 520,
       show: false,
-      frame: false,
+      ...windowChrome(hub.platform),
       backgroundColor: '#0f0f11',
       title: 'Diwan',
       icon: appIcon,
@@ -274,6 +328,7 @@ function start(): void {
       if (!quitting && hub.settings().closeToTray && hub.trayAvailable) {
         e.preventDefault()
         w.hide()
+        trayNotice.hiddenByClose()
         return
       }
       geometryNow()
@@ -384,14 +439,36 @@ function start(): void {
         if (avatar) hub.setRuntime(a.id, { avatar })
       }
       hub.trayAvailable = tray.start()
+      try {
+        hub.whatsappHandler = protocol.isRegistered()
+      } catch (e) {
+        log.warn('could not read the whatsapp: handler', e)
+      }
       hub.notify()
       win = createWindow()
+      // Logoff/shutdown: the close-to-tray handler must not cancel the close, and settings are saved now.
+      // A Windows logoff query can still be cancelled, so it only saves.
+      wireSessionEnd({
+        platform: process.platform,
+        win,
+        powerMonitor,
+        onQuery: () => {
+          persistGeometry()
+          flushQuietly()
+        },
+        onEnd: () => {
+          quitting = true
+          persistGeometry()
+          flushQuietly()
+        },
+      })
 
       registerShellIpc({
         hub,
         registry,
         avatars,
         tray,
+        taskbar,
         paths,
         log,
         win: () => win,
@@ -400,7 +477,7 @@ function start(): void {
         removeAccount,
         forgetNotifications: (id) => notifier.forgetAccount(id),
         sendShell,
-        planImport: () => {
+        planImport: linuxOnly(hub.platform, () => {
           const plan = planImport(
             { nexusConfig: paths.nexusConfig, nexusPartitions },
             fsPlanDeps,
@@ -409,8 +486,8 @@ function start(): void {
           // Everything is already in (e.g. a crash just before markImported): stop offering the import.
           if (plan.reason === 'Already imported' && hub.importAvailable) hub.markImported()
           return { ...plan, nexusRunning: nexusRunning(paths.nexusUserData) }
-        },
-        applyImport: async () => {
+        }),
+        applyImport: linuxOnly(hub.platform, async () => {
           if (nexusRunning(paths.nexusUserData)) throw new Error('Quit Nexus first, then import again.')
           const plan = planForApply(
             planImport({ nexusConfig: paths.nexusConfig, nexusPartitions }, fsPlanDeps, importedSources()),
@@ -422,6 +499,13 @@ function start(): void {
             log,
             isNexusRunning: () => nexusRunning(paths.nexusUserData),
           })
+        }),
+        setWhatsappHandler: (enabled) => {
+          try {
+            hub.whatsappHandler = protocol.set(enabled)
+          } finally {
+            hub.notify()
+          }
         },
       })
       registerGuestIpc({ hub, registry, notifier, avatars, log })
@@ -429,7 +513,9 @@ function start(): void {
       hub.on('changed', (s) => {
         win?.webContents.send(STATE_CHANGED, s)
         tray.update(s)
-        win?.setTitle(windowTitle(unreadTotal(s.accounts, s.runtime)))
+        const total = unreadTotal(s.accounts, s.runtime)
+        win?.setTitle(windowTitle(total))
+        taskbar.update(total)
       })
       handleArgv(process.argv)
       log.info('Diwan started', { version: app.getVersion(), accounts: hub.accounts().length })

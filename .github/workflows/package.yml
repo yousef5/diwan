@@ -1,0 +1,116 @@
+# Builds the installable packages and smoke-runs each one headless. Not triggered by itself: ci.yml
+# calls it on every push (workflow artifacts only) and release.yml on a v* tag (then attaches the
+# same files to a draft release).
+name: package
+on:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  # Never reuse node_modules/electron/dist: electron-builder downloads the pinned Electron per host.
+  DIWAN_DOWNLOAD_ELECTRON: '1'
+
+jobs:
+  linux:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.9
+      - name: Install rpmbuild, Xvfb and D-Bus
+        run: sudo apt-get update -q && sudo apt-get install -y -q rpm xvfb dbus
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bunx electron-builder --linux AppImage deb rpm --publish never
+      - name: Smoke-run the AppImage headless
+        run: |
+          set -eu
+          app=$(ls release/Diwan-*.AppImage)
+          scratch=$(mktemp -d)
+          mkdir "$scratch/home"
+          (cd "$scratch" && "$OLDPWD/$app" --appimage-extract >/dev/null)
+          # A throwaway profile, a private bus and a virtual display. AppRun adds --no-sandbox by itself
+          # when user namespaces are blocked (Ubuntu 24.04's AppArmor), exactly as on a user's machine.
+          set +e
+          HOME="$scratch/home" DIWAN_USER_DATA="$scratch/data" \
+            timeout -k 5 30 dbus-run-session -- xvfb-run -a "$scratch/squashfs-root/AppRun"
+          code=$?
+          set -e
+          pkill -f "$scratch/squashfs-root" || true
+          echo "exit code $code (124 = still running when the timeout stopped it)"
+          cat "$scratch/data/logs/main.log" || true
+          [ "$code" = 124 ]
+          grep -q 'Diwan started' "$scratch/data/logs/main.log"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: diwan-linux
+          path: |
+            release/Diwan-*.AppImage
+            release/Diwan-*.deb
+            release/Diwan-*.rpm
+          if-no-files-found: error
+          compression-level: 0
+
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: 1.3.9
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - run: bunx electron-builder --win nsis --x64 --publish never
+      - name: Smoke-run the installer and the installed app
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $setup = Get-Item release/Diwan-Setup-*.exe
+          $dir = Join-Path $env:RUNNER_TEMP 'diwan-install'
+          Start-Process -FilePath $setup.FullName -ArgumentList '/S', "/D=$dir" -Wait
+          $exe = Get-ChildItem $dir -Filter diwan.exe | Select-Object -First 1
+          if (-not $exe) { Get-ChildItem $dir; throw 'diwan.exe not installed' }
+          $data = Join-Path $env:RUNNER_TEMP 'diwan-data'
+          $env:DIWAN_USER_DATA = $data
+          $p = Start-Process -FilePath $exe.FullName -PassThru
+          Start-Sleep -Seconds 30
+          $log = Join-Path $data 'logs/main.log'
+          if (Test-Path $log) { Get-Content $log }
+          if ($p.HasExited) { throw "Diwan exited early with code $($p.ExitCode)" }
+          Get-Process -Name diwan -ErrorAction SilentlyContinue | Stop-Process -Force
+          if (-not (Select-String -Path $log -Pattern 'Diwan started' -Quiet)) { throw 'no "Diwan started" in the log' }
+      - name: Uninstall removes only Diwan's own whatsapp handler
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $dir = Join-Path $env:RUNNER_TEMP 'diwan-install'
+          $key = 'HKCU:\Software\Classes\whatsapp\shell\open\command'
+          $uninstall = Get-ChildItem $dir -Filter 'Uninstall*.exe' | Select-Object -First 1
+          # What Electron's setAsDefaultProtocolClient writes when the Settings switch is on.
+          New-Item -Path $key -Force | Out-Null
+          Set-Item -Path $key -Value "`"$dir\Diwan.exe`" `"--`" `"%1`""
+          # A copy of the installed files: the uninstaller with _?= runs in place, so the same
+          # install can be uninstalled twice (once with our handler, once with a foreign one).
+          $copy = Join-Path $env:RUNNER_TEMP 'diwan-install-copy'
+          Copy-Item $dir $copy -Recurse
+          Start-Process -FilePath $uninstall.FullName -ArgumentList '/S', "_?=$dir" -Wait
+          if (Test-Path 'HKCU:\Software\Classes\whatsapp') { throw 'our whatsapp handler was left behind' }
+          # Another app's handler must survive an uninstall.
+          New-Item -Path $key -Force | Out-Null
+          Set-Item -Path $key -Value '"C:\Program Files\WhatsApp\WhatsApp.exe" "%1"'
+          $uninstall2 = Get-ChildItem $copy -Filter 'Uninstall*.exe' | Select-Object -First 1
+          Start-Process -FilePath $uninstall2.FullName -ArgumentList '/S', "_?=$copy" -Wait
+          if (-not (Test-Path $key)) { throw 'a foreign whatsapp handler was deleted' }
+          Remove-Item 'HKCU:\Software\Classes\whatsapp' -Recurse
+          Write-Host 'uninstall: own handler removed, foreign handler kept'
+      - uses: actions/upload-artifact@v7
+        with:
+          name: diwan-windows
+          path: release/Diwan-Setup-*.exe
+          if-no-files-found: error
+          compression-level: 0

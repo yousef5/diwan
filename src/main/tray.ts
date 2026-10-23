@@ -1,5 +1,5 @@
 import { Menu, type MenuItemConstructorOptions, type NativeImage, nativeImage, Tray } from 'electron'
-import type { Snapshot } from '../shared/types'
+import type { Platform, Snapshot } from '../shared/types'
 import { badgeKey, unreadTotal } from '../shared/unread'
 import type { Logger } from './log'
 import type { StateHub } from './state'
@@ -8,6 +8,7 @@ import { trayAccountLabel, trayMenuSignature } from './tray-text'
 export interface TrayDeps {
   hub: StateHub
   icon: string
+  platform: Platform
   log: Logger
   show(): void
   reveal(accountId: string): void
@@ -35,6 +36,8 @@ export class TrayController {
       this.tooltip = 'Diwan'
       this.tray.setToolTip(this.tooltip)
       this.tray.on('click', () => this.d.show())
+      // Windows users expect a double-click to open the app too (its first click already did).
+      if (this.d.platform === 'win32') this.tray.on('double-click', () => this.d.show())
       this.update(this.d.hub.snapshot())
       return true
     } catch (e) {

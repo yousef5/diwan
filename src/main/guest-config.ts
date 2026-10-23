@@ -28,9 +28,19 @@ export const partitionOf = (accountId: string): string => `persist:acc-${account
 
 // The UA of the Chrome bundled in this Electron, in Chrome's reduced form. A stale or
 // Electron-branded UA makes WhatsApp Web show "update your browser" banners.
-export function chromeUserAgent(chromeVersion: string = process.versions.chrome): string {
+// The OS token is the one a real Chrome on this platform would send.
+export function chromeUserAgent(
+  chromeVersion: string = process.versions.chrome,
+  platform: string = process.platform,
+): string {
   const major = chromeVersion.split('.')[0]
-  return `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
+  const os =
+    platform === 'win32'
+      ? 'Windows NT 10.0; Win64; x64'
+      : platform === 'darwin'
+        ? 'Macintosh; Intel Mac OS X 10_15_7'
+        : 'X11; Linux x86_64'
+  return `Mozilla/5.0 (${os}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${major}.0.0.0 Safari/537.36`
 }
 
 export function pickSpellLanguages(available: readonly string[]): string[] {

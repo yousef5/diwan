@@ -22,6 +22,10 @@ export function unreadTotal(accounts: Account[], runtime: Record<string, Account
 export const BADGE_KEYS = ['none', '1', '2', '3', '4', '5', '6', '7', '8', '9', '9+'] as const
 export type BadgeKey = (typeof BADGE_KEYS)[number]
 
+// The Windows taskbar overlay: a badge only, so nothing to draw at 0 (main clears the overlay).
+export const OVERLAY_KEYS = ['1', '2', '3', '4', '5', '6', '7', '8', '9', '9+'] as const
+export type OverlayKey = (typeof OVERLAY_KEYS)[number]
+
 export function badgeKey(total: number): BadgeKey {
   const n = Number.isFinite(total) ? Math.floor(total) : 0
   if (n < 1) return 'none'

@@ -46,6 +46,9 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     recovery: false,
     importAvailable: false,
     trayAvailable: true,
+    platform: 'linux',
+    whatsappHandler: null,
+    dataDir: '/home/u/.config/Diwan',
     ...over,
   }
 }

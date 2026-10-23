@@ -4,7 +4,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest'
 import type { Account, AccountRuntime, ShellCommand, Snapshot } from '../../src/shared/types'
 
 const show = vi.fn(async (_total: number) => {})
-vi.mock('../../src/renderer/trayBadges', () => ({ trayBadges: () => ({ show }) }))
+const overlayShow = vi.fn(async (_total: number) => {})
+vi.mock('../../src/renderer/trayBadges', () => ({
+  trayBadges: () => ({ show }),
+  overlayBadges: () => ({ show: overlayShow }),
+}))
 
 const { App } = await import('../../src/renderer/App')
 const { useUi } = await import('../../src/renderer/state')
@@ -48,6 +52,9 @@ function snapshot(over: Partial<Snapshot> = {}): Snapshot {
     recovery: false,
     importAvailable: false,
     trayAvailable: true,
+    platform: 'linux',
+    whatsappHandler: null,
+    dataDir: '/home/u/.config/Diwan',
     ...over,
   }
 }
@@ -89,6 +96,7 @@ beforeEach(() => {
   stateListeners = []
   commandListeners = []
   show.mockClear()
+  overlayShow.mockClear()
   replies = new Promise<Snapshot>((r) => {
     reply = r
   })
@@ -219,6 +227,36 @@ describe('App: commands', () => {
   })
 })
 
+describe('App: Windows', () => {
+  test('no window-controls bar, even when the setting is on (the caption buttons are native)', async () => {
+    render(<App />)
+    await answer(
+      snapshot({ platform: 'win32', settings: { ...snapshot().settings, showWindowControls: true } }),
+    )
+    expect(screen.queryByRole('button', { name: 'Minimize' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Close' })).toBeNull()
+  })
+
+  test('the recovery banner keeps clear of the caption buttons there, and only there', async () => {
+    render(<App />)
+    await answer(snapshot({ recovery: true, platform: 'win32' }))
+    expect(screen.getByRole('alert').className).toContain('pr-[calc(1rem+var(--caption-w))]')
+    push(snapshot({ recovery: true }))
+    expect(screen.getByRole('alert').className).toContain('pr-4')
+    expect(screen.getByRole('alert').className).not.toContain('caption-w')
+  })
+
+  test('never offers the Nexus import, on startup or on the welcome screen', async () => {
+    render(<App />)
+    await answer(
+      snapshot({ accounts: [], runtime: {}, activeId: null, importAvailable: true, platform: 'win32' }),
+    )
+    expect(useUi.getState().dialog).toBeNull()
+    expect(screen.getByRole('heading', { name: 'Welcome to Diwan' })).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'Import from Nexus' })).toBeNull()
+  })
+})
+
 describe('App: import offer', () => {
   test('opens the import dialog by itself on a first run with Nexus and no accounts', async () => {
     render(<App />)
@@ -268,5 +306,19 @@ describe('App: tray badge', () => {
     act(() => useUi.getState().openSettings())
     act(() => useUi.getState().toast('hello'))
     expect(show).toHaveBeenCalledTimes(1)
+  })
+
+  test('the Windows taskbar overlay follows the same total, even without a tray', async () => {
+    render(<App />)
+    await answer(snapshot({ platform: 'win32', trayAvailable: false }))
+    expect(overlayShow).toHaveBeenLastCalledWith(2)
+    push(snapshot({ platform: 'win32', runtime: { [A]: rt({ unread: 0 }), [B]: rt({ unread: 5 }) } }))
+    expect(overlayShow).toHaveBeenLastCalledWith(0)
+  })
+
+  test('no taskbar overlay off Windows', async () => {
+    render(<App />)
+    await answer(snapshot())
+    expect(overlayShow).not.toHaveBeenCalled()
   })
 })

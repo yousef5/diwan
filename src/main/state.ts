@@ -1,14 +1,17 @@
 import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
+import { dirname } from 'node:path'
 import type {
   Account,
   AccountRuntime,
   DiwanFile,
+  Platform,
   Settings,
   SettingsPatch,
   Snapshot,
   WindowState,
 } from '../shared/types'
+import { platformOf } from './platform'
 import type { DeepReadonly, Store } from './store/store'
 
 const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread: 0, avatar: null })
@@ -34,9 +37,12 @@ const DEFAULT_RUNTIME: AccountRuntime = Object.freeze({ state: 'loading', unread
 export const SNAPSHOT_GAP_MS = 50
 
 export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
-  // Not persisted. Callers must notify() after changing either of these.
+  // Not persisted. Callers must notify() after changing any of these.
   importAvailable = false
   trayAvailable = true
+  platform: Platform = platformOf()
+  whatsappHandler: boolean | null = null
+  dataDir: string
   private runtime = new Map<string, AccountRuntime>()
   private activeId: string | null
   // A push is queued: as a microtask, or as the timer below.
@@ -52,6 +58,7 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     private readonly gapMs: number = SNAPSHOT_GAP_MS,
   ) {
     super()
+    this.dataDir = dirname(store.path)
     this.activeId = this.accounts()[0]?.id ?? null
   }
 
@@ -86,6 +93,9 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
       recovery: this.store.recovery,
       importAvailable: this.importAvailable,
       trayAvailable: this.trayAvailable,
+      platform: this.platform,
+      whatsappHandler: this.whatsappHandler,
+      dataDir: this.dataDir,
     }
   }
 
@@ -286,6 +296,19 @@ export class StateHub extends EventEmitter<{ changed: [Snapshot] }> {
     )
       return
     this.importAvailable = false
+    this.persistNow()
+  }
+
+  trayNoticeShown(): boolean {
+    return this.store.get().trayNoticeShown
+  }
+
+  // Written at once, without a snapshot push: the shell never shows this flag.
+  markTrayNoticeShown(): void {
+    if (this.store.recovery || this.trayNoticeShown()) return
+    this.store.update((f) => {
+      f.trayNoticeShown = true
+    })
     this.persistNow()
   }
 

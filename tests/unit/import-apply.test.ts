@@ -7,6 +7,7 @@ import {
   mkdtempSync,
   readdirSync,
   readFileSync,
+  renameSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -27,6 +28,7 @@ import { planImport } from '../../src/main/importer/plan'
 import { createLogger } from '../../src/main/log'
 import { StateHub } from '../../src/main/state'
 import { Store } from '../../src/main/store/store'
+import { isLinux } from './helpers/platform'
 
 const ID_A = '649d14d5-ebb9-4ed6-9725-633b89c6ceac'
 const ID_B = 'b2c1d4e5-0000-4000-8000-000000000002'
@@ -77,7 +79,48 @@ function fakeNexus() {
   return { root, parts, cfg, userData: join(root, 'MultiWhatsApp') }
 }
 
-describe('import apply', () => {
+// The Nexus importer is a Linux-only feature (Nexus is a Linux app), and these tests lean on POSIX
+// semantics throughout (symlinks, FIFOs, /dev/zero, chmod 0, SingletonLock): Linux only.
+describe.runIf(isLinux)('import apply', () => {
+  test('win32: a rename blocked by a transient file lock is retried', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    let calls = 0
+    const rename = vi.fn(async (from: string, to: string) => {
+      if (calls++ === 0) throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+      renameSync(from, to)
+    })
+    const r = await applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+      rename,
+      retry: { platform: 'win32', delays: [0, 0] },
+    })
+    expect(r).toEqual({ imported: ['A'], failed: [] })
+    expect(rename).toHaveBeenCalledTimes(2)
+  })
+
+  test('linux: a failed rename is not retried', async () => {
+    const n = fakeNexus()
+    const { hub, parts, diwanDir } = mkHub()
+    const rename = vi.fn(async () => {
+      throw Object.assign(new Error('EBUSY'), { code: 'EBUSY' })
+    })
+    const r = await applyImport(plan(item(ID_A, join(n.parts, `wa-${ID_A}`), 'A')), {
+      hub,
+      partitionsDir: parts,
+      setupSession: () => {},
+      log: quiet(diwanDir),
+      rename,
+      retry: { platform: 'linux', delays: [0, 0] },
+    })
+    expect(r.failed).toHaveLength(1)
+    expect(rename).toHaveBeenCalledTimes(1)
+    expect(hub.accounts()).toEqual([])
+  })
+
   test('copies the session, registers the account, leaves Nexus untouched', async () => {
     const n = fakeNexus()
     const diwanDir = tmp('diwan-')
@@ -326,7 +369,7 @@ describe('import apply', () => {
 })
 
 // Reached at startup (hasImportable): anything but a small regular file must return null at once.
-describe('fsPlanDeps.readText', () => {
+describe.runIf(isLinux)('fsPlanDeps.readText', () => {
   test('a small regular file is read', () => {
     const d = tmp('diwan-read-')
     writeFileSync(join(d, 'config.json'), '{"accounts":[]}')

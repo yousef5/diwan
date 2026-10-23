@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import { describe, expect, test } from 'vitest'
 import { hasImportable, type PlanDeps, planForApply, planImport } from '../../src/main/importer/plan'
 import { ACCOUNT_COLORS } from '../../src/shared/palette'
@@ -44,14 +45,14 @@ describe('planImport', () => {
         sourceId: 'aaa',
         name: 'Account 1',
         color: ACCOUNT_COLORS[0],
-        sourceDir: `${paths.nexusPartitions}/wa-aaa`,
+        sourceDir: join(paths.nexusPartitions, 'wa-aaa'),
         bytes: 1000,
       },
       {
         sourceId: 'bbb',
         name: 'Account 2',
         color: ACCOUNT_COLORS[1],
-        sourceDir: `${paths.nexusPartitions}/wa-bbb`,
+        sourceDir: join(paths.nexusPartitions, 'wa-bbb'),
         bytes: 50,
       },
     ])
@@ -92,7 +93,7 @@ describe('planImport', () => {
       ),
     )
     expect(plan.items.map((i) => i.sourceId)).toEqual(['aaa'])
-    expect(plan.items.every((i) => i.sourceDir.startsWith(`${paths.nexusPartitions}/wa-`))).toBe(true)
+    expect(plan.items.every((i) => i.sourceDir.startsWith(join(paths.nexusPartitions, 'wa-')))).toBe(true)
   })
 
   test('only an unsafe id -> no signed-in accounts', () => {
