@@ -81,6 +81,21 @@ function MenuFlow({
   )
 }
 
+// A dialog that is open from the start, with nothing focused before it.
+function Plain() {
+  const [open, setOpen] = useState(true)
+  return (
+    <>
+      <main>stage</main>
+      {open && (
+        <Dialog title="Welcome" onClose={() => setOpen(false)} footer={null}>
+          hi
+        </Dialog>
+      )}
+    </>
+  )
+}
+
 function Layer({ name, onEscape, enabled }: { name: string; onEscape(n: string): void; enabled?: boolean }) {
   useEscape(() => onEscape(name), enabled)
   return null
@@ -290,6 +305,16 @@ describe('Dialog focus', () => {
     dead.remove()
   })
 
+  test('opened with nothing focused (<body>): focus goes to the main region, not back to <body>', async () => {
+    const user = userEvent.setup()
+    ;(document.activeElement as HTMLElement | null)?.blur()
+    expect(document.activeElement).toBe(document.body)
+    render(<Plain />)
+    await user.keyboard('{Escape}')
+    expect(screen.queryByRole('dialog')).toBeNull()
+    expect(document.activeElement).toBe(screen.getByRole('main'))
+  })
+
   test('no tiles at all: the main region, never <body>', async () => {
     await closeFrom(<MenuFlow tiles={false} />)
     const main = screen.getByRole('main')
@@ -472,6 +497,35 @@ describe('Toasts', () => {
     act(() => useUi.getState().toast('two'))
     act(() => vi.advanceTimersByTime(TOAST_MS))
     expect(within(stack()).queryByText('two')).toBeNull()
+  })
+
+  test('a dismissed toast that had focus does not keep the rest paused', () => {
+    vi.useFakeTimers()
+    render(<Toasts />)
+    act(() => {
+      useUi.getState().toast('one')
+      useUi.getState().toast('two')
+    })
+    const first = within(stack()).getAllByRole('button', { name: 'Dismiss' })[0]
+    act(() => first.focus())
+    expect(useUi.getState().toastsPaused).toBe(true)
+    // Removing the focused element sends no blur React can see.
+    act(() => useUi.getState().dismissToast(useUi.getState().toasts[0].id))
+    expect(useUi.getState().toastsPaused).toBe(false)
+    act(() => vi.advanceTimersByTime(TOAST_MS))
+    expect(within(stack()).queryByText('two')).toBeNull()
+  })
+
+  test('unmounting the stack while paused un-pauses the timers', () => {
+    vi.useFakeTimers()
+    const { unmount } = render(<Toasts />)
+    act(() => useUi.getState().toast('one'))
+    fireEvent.mouseEnter(stack())
+    expect(useUi.getState().toastsPaused).toBe(true)
+    unmount()
+    expect(useUi.getState().toastsPaused).toBe(false)
+    act(() => vi.advanceTimersByTime(TOAST_MS))
+    expect(useUi.getState().toasts).toEqual([])
   })
 
   test('the close button dismisses one toast', async () => {

@@ -1,11 +1,22 @@
-import { type FocusEvent, type KeyboardEvent, type ReactNode, useId, useRef, useState } from 'react'
+import {
+  type FocusEvent,
+  type KeyboardEvent,
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from 'react'
 
 const GAP = 14
 
 // A label to the right of a rail control, shown on hover and on keyboard focus (not on the focus a
 // mouse click leaves behind, or it would stick after the pointer leaves). Esc or a right-click
 // hides it until the pointer or focus leaves. It is position: fixed from the trigger's box, so the
-// rail's scrolling tile list can't clip it.
+// rail's scrolling tile list can't clip it. While open it follows the trigger: it re-measures after
+// every render (a keyboard reorder moves the tile) and on any scroll or window resize.
 //
 // `children` receives the id to put in the trigger's aria-describedby: it names the hint (the
 // shortcut), since the label already is the trigger's accessible name. No hint, no description.
@@ -26,14 +37,30 @@ export function Tooltip({
   const [pos, setPos] = useState({ top: 0, left: 0 })
   const open = (hover || focus) && !dismissed
 
-  const place = () => {
+  // Only a real move sets state, so measuring after every render can't loop.
+  const place = useCallback(() => {
     const r = ref.current?.getBoundingClientRect()
-    if (r) setPos({ top: r.top + r.height / 2, left: r.right + GAP })
-  }
+    if (!r) return
+    const top = r.top + r.height / 2
+    const left = r.right + GAP
+    setPos((p) => (p.top === top && p.left === left ? p : { top, left }))
+  }, [])
+
+  useLayoutEffect(() => {
+    if (open) place()
+  })
+  useEffect(() => {
+    if (!open) return
+    // Capture: a scroll in any container (the rail's tile list) doesn't bubble to window.
+    window.addEventListener('scroll', place, true)
+    window.addEventListener('resize', place)
+    return () => {
+      window.removeEventListener('scroll', place, true)
+      window.removeEventListener('resize', place)
+    }
+  }, [open, place])
   const onFocus = (e: FocusEvent) => {
-    if (!isFocusVisible(e.target)) return
-    place()
-    setFocus(true)
+    if (isFocusVisible(e.target)) setFocus(true)
   }
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.key === 'Escape' && open) setDismissed(true)
@@ -44,10 +71,7 @@ export function Tooltip({
     <div
       ref={ref}
       className="relative flex justify-center"
-      onMouseEnter={() => {
-        place()
-        setHover(true)
-      }}
+      onMouseEnter={() => setHover(true)}
       onMouseLeave={() => {
         setHover(false)
         setDismissed(false)

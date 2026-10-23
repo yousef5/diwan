@@ -203,6 +203,18 @@ describe('ui state', () => {
     expect(ui().toasts).toEqual([])
   })
 
+  test('over the cap the oldest plain toast goes first; errors only when all are errors', () => {
+    ui().toast('e1', { error: true })
+    ui().toast('p1')
+    ui().toast('e2', { error: true })
+    ui().toast('p2')
+    expect(ui().toasts.map((t) => t.text)).toEqual(['e1', 'e2', 'p2'])
+    ui().toast('e3', { error: true })
+    expect(ui().toasts.map((t) => t.text)).toEqual(['e1', 'e2', 'e3'])
+    ui().toast('e4', { error: true })
+    expect(ui().toasts.map((t) => t.text)).toEqual(['e2', 'e3', 'e4'])
+  })
+
   test('toast ids are unique', () => {
     ui().toast('a')
     ui().toast('b')

@@ -32,6 +32,14 @@ describe('call', () => {
     expect(useUi.getState().toasts.map((t) => t.text)).toEqual(['Quit Nexus first, then import again.'])
   })
 
+  test('a failed call is an error toast: it stays until dismissed', async () => {
+    invoke.mockRejectedValue(new Error('nope'))
+    await call('window:minimize')
+    expect(useUi.getState().toasts).toMatchObject([{ text: 'nope', error: true }])
+    vi.advanceTimersByTime(60_000)
+    expect(useUi.getState().toasts).toHaveLength(1)
+  })
+
   test('a synchronous throw is caught too', async () => {
     invoke.mockImplementation(() => {
       throw new Error('bridge gone')

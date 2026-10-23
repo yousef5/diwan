@@ -6,10 +6,14 @@ import { useEscape } from './useEscape'
 const FOCUSABLE =
   'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
 
-// :disabled also catches controls inside a disabled <fieldset>.
+// :disabled also catches controls inside a disabled <fieldset>; checkVisibility() catches
+// display:none and content-visibility from CSS (jsdom lacks it, hence the optional call).
 const focusables = (root: HTMLElement) =>
   Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
-    (el) => !el.matches(':disabled') && !el.closest('[hidden], [inert], [aria-hidden="true"]'),
+    (el) =>
+      !el.matches(':disabled') &&
+      !el.closest('[hidden], [inert], [aria-hidden="true"]') &&
+      el.checkVisibility?.() !== false,
   )
 
 // A modal dialog. Focus moves in when it opens (to [data-autofocus], else the first control, else

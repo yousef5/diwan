@@ -1,4 +1,4 @@
-import type { DragEvent, KeyboardEvent, MouseEvent } from 'react'
+import { type DragEvent, type KeyboardEvent, type MouseEvent, memo } from 'react'
 import type { Account, AccountRuntime } from '../../shared/types'
 import { initials } from '../format'
 import { Kbd } from '../ui/Kbd'
@@ -20,26 +20,50 @@ export function tileLabel(account: Account, runtime: AccountRuntime): string {
   return parts.join(', ')
 }
 
-interface Props {
+// Handlers take the account id, so the rail passes the same functions to every tile and a tile
+// only re-renders when something it shows changes (see `sameTile` below).
+export interface TileProps {
   account: Account
   runtime: AccountRuntime
   index: number
   active: boolean
   dropHint: 'before' | 'after' | null
-  onSelect(): void
-  onMenu(e: MouseEvent<HTMLButtonElement>): void
-  onKeyDown(e: KeyboardEvent<HTMLButtonElement>): void
-  onDragStart(e: DragEvent): void
-  onDragOver(e: DragEvent): void
-  onDrop(e: DragEvent): void
+  onSelect(id: string): void
+  onMenu(id: string, e: MouseEvent<HTMLButtonElement>): void
+  onKeyDown(id: string, e: KeyboardEvent<HTMLButtonElement>): void
+  onDragStart(id: string, e: DragEvent): void
   onDragEnd(): void
 }
 
 // One account in the rail (design B): a 44 px tile in the account colour with the picture or the
 // initials. Active = a 3 px accent bar on the left edge and a 2 px bg / 2 px accent ring, which is
 // why keyboard focus uses focus-ring-wide (outside that ring). Unread pill top-right (grey when
-// muted), amber dot bottom-right when the page is offline, failed or hung.
-export function AccountTile({
+// muted), amber dot bottom-right when the page is offline, failed or hung. Drops are handled by
+// the rail's list, so the gaps between tiles accept them too.
+export const AccountTile = memo(Tile, sameTile)
+
+// Only what the tile draws or says counts; order, zoom and the like don't.
+export function sameTile(a: TileProps, b: TileProps): boolean {
+  return (
+    a.account.id === b.account.id &&
+    a.account.name === b.account.name &&
+    a.account.color === b.account.color &&
+    a.account.muted === b.account.muted &&
+    a.runtime.state === b.runtime.state &&
+    a.runtime.unread === b.runtime.unread &&
+    a.runtime.avatar === b.runtime.avatar &&
+    a.active === b.active &&
+    a.index === b.index &&
+    a.dropHint === b.dropHint &&
+    a.onSelect === b.onSelect &&
+    a.onMenu === b.onMenu &&
+    a.onKeyDown === b.onKeyDown &&
+    a.onDragStart === b.onDragStart &&
+    a.onDragEnd === b.onDragEnd
+  )
+}
+
+function Tile({
   account,
   runtime,
   index,
@@ -49,14 +73,12 @@ export function AccountTile({
   onMenu,
   onKeyDown,
   onDragStart,
-  onDragOver,
-  onDrop,
   onDragEnd,
-}: Props) {
+}: TileProps) {
+  const id = account.id
   const problem = PROBLEM[runtime.state] !== undefined
   return (
-    // biome-ignore lint/a11y/noStaticElementInteractions: drop target for mouse reordering; the tile button is the control
-    <div className="relative flex w-[68px] justify-center" onDragOver={onDragOver} onDrop={onDrop}>
+    <div className="relative flex w-[68px] justify-center">
       {dropHint && (
         <div
           data-testid="drop-hint"
@@ -68,16 +90,17 @@ export function AccountTile({
         {(describedBy) => (
           <button
             type="button"
-            data-account-tile={account.id}
+            data-account-tile={id}
             data-active-tile={active ? '' : undefined}
             aria-label={tileLabel(account, runtime)}
             aria-describedby={describedBy}
             aria-current={active ? 'true' : undefined}
+            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
             draggable
-            onClick={onSelect}
-            onContextMenu={onMenu}
-            onKeyDown={onKeyDown}
-            onDragStart={onDragStart}
+            onClick={() => onSelect(id)}
+            onContextMenu={(e) => onMenu(id, e)}
+            onKeyDown={(e) => onKeyDown(id, e)}
+            onDragStart={(e) => onDragStart(id, e)}
             onDragEnd={onDragEnd}
             style={{ background: account.color }}
             className={`no-drag focus-ring-wide flex h-11 w-11 items-center justify-center overflow-hidden rounded-xl transition-[opacity,box-shadow] ${

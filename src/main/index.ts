@@ -67,6 +67,9 @@ function start(): void {
 
   // Any queued snapshot goes first: a command (say, logout's remount) must never reach the shell
   // before the state it follows from.
+  // Never call this from inside a hub 'changed' listener: flush() is a no-op while a push is being
+  // delivered (see StateHub), so the command would reach the shell before the snapshot carrying
+  // the listener's own change. Defer it with queueMicrotask there.
   const sendShell = (cmd: ShellCommand) => {
     hub.flush()
     win?.webContents.send(SHELL_COMMAND, cmd)

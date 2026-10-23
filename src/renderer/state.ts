@@ -122,14 +122,18 @@ export const useUi = create<UiState>((set, get) => {
     openDialog: (dialog) => set({ dialog, menu: null }),
     openMenu: (menu) => set((s) => ({ menu, menuTrigger: menu ? menu.id : s.menuTrigger })),
 
-    // A repeated message (say, the same failure twice) shows once, with a fresh timer. Only the
-    // newest MAX_TOASTS stay, so a burst of failures can't cover the window (that cap applies to
-    // errors too: the oldest goes first).
+    // A repeated message (say, the same failure twice) shows once, with a fresh timer. At most
+    // MAX_TOASTS show, so a burst can't cover the window: over the cap the oldest plain message
+    // goes first, and an error only when every toast is an error.
     toast: (text, opts) => {
       const error = opts?.error === true
       for (const t of get().toasts) if (t.text === text) dismissToast(t.id)
-      const over = get().toasts.length + 1 - MAX_TOASTS
-      for (const t of get().toasts.slice(0, Math.max(0, over))) dismissToast(t.id)
+      while (get().toasts.length >= MAX_TOASTS) {
+        const all = get().toasts
+        const victim = all.find((t) => !t.error) ?? all[0]
+        if (!victim) break
+        dismissToast(victim.id)
+      }
       const id = ++toastSeq
       if (!error) {
         const clock: ToastClock = { timer: null, remaining: TOAST_MS, startedAt: 0 }
